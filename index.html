@@ -988,19 +988,41 @@ function renderHoldings() {
   empty.classList.add('hidden');
   let totalValue=0, totalCost=0;
   const rows = holdings.map((h,i) => {
-    const price = state.prices[h.ticker]?.price || h.avgCost;
-    const priceStr = state.prices[h.ticker] ? `<span class="num">$${price.toFixed(2)}</span>${state.prices[h.ticker].change!==undefined?`<br><span style="font-size:10px;color:${state.prices[h.ticker].change>=0?'var(--green)':'var(--red)'}">${state.prices[h.ticker].change>=0?'+':''}${state.prices[h.ticker].change?.toFixed(2)}%</span>`:''}` : `<span class="num text-t2">${price.toFixed(2)}</span>`;
-    const val = h.qty*price, cost = h.qty*h.avgCost, g = val-cost, gp = cost>0?(g/cost)*100:0;
-    totalValue+=val; totalCost+=cost;
+    const priceData = state.prices[h.ticker];
+    // null = fetch attempted but failed; undefined = not yet fetched
+    const livePrice = priceData?.price;
+    const price = livePrice || h.avgCost;
+    const yahoo = toYahooTicker(h.ticker);
+    const yHint = yahoo !== h.ticker ? ` title="Fetched as ${yahoo} on Yahoo Finance"` : '';
+
+    let priceStr;
+    if (livePrice) {
+      const chg = priceData.change;
+      const chgStr = chg !== undefined
+        ? `<br><span style="font-size:10px;color:${chg>=0?'var(--green)':'var(--red)'}">${chg>=0?'+':''}${chg.toFixed(2)}%</span>`
+        : '';
+      const cur = priceData.currency ? ` <span style="font-size:9px;color:var(--t3)">${priceData.currency}</span>` : '';
+      priceStr = `<span class="num"${yHint}>$${livePrice.toFixed(2)}${cur}</span>${chgStr}`;
+    } else if (priceData === null) {
+      // explicitly failed
+      priceStr = `<span style="font-size:11px;color:var(--red)" title="Could not fetch price for ${yahoo}">⚠ unavailable</span>
+        <br><span style="font-size:9px;color:var(--t3)">using cost $${h.avgCost.toFixed(2)}</span>`;
+    } else {
+      // not yet fetched (undefined)
+      priceStr = `<span class="spin" style="width:11px;height:11px;display:inline-block;vertical-align:middle"></span>`;
+    }
+
+    const val = h.qty * price, cost = h.qty * h.avgCost, g = val - cost, gp = cost > 0 ? (g/cost)*100 : 0;
+    totalValue += val; totalCost += cost;
     return `<tr>
-      <td><span class="ticker-sym">${h.ticker}</span></td>
+      <td><span class="ticker-sym">${h.ticker}</span>${yahoo!==h.ticker?`<br><span style="font-size:9px;color:var(--t3)">${yahoo}</span>`:''}</td>
       <td style="font-size:12px;color:var(--t2);max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${h.name||''}</td>
-      <td><span class="badge-acct badge-${h.account.toLowerCase()}">${h.account}</span></td>
+      <td><span class="badge-acct badge-${(h.account||'tfsa').toLowerCase()}">${h.account||'TFSA'}</span></td>
       <td class="num">${parseFloat(h.qty).toFixed(h.qty<10?3:2)}</td>
       <td class="num">$${parseFloat(h.avgCost).toFixed(2)}</td>
       <td>${priceStr}</td>
-      <td class="num">$${fmt(val)}</td>
-      <td class="${g>=0?'holding-change-pos':'holding-change-neg'}">${g>=0?'+':''}$${fmt(Math.abs(g))}<br><span style="font-size:10px">${gp.toFixed(1)}%</span></td>
+      <td class="num">${livePrice ? '$'+fmt(val) : '<span style="color:var(--t3)">—</span>'}</td>
+      <td class="${g>=0?'holding-change-pos':'holding-change-neg'}">${livePrice ? `${g>=0?'+':''}$${fmt(Math.abs(g))}<br><span style="font-size:10px">${gp.toFixed(1)}%</span>` : '<span style="color:var(--t3)">—</span>'}</td>
       <td><button class="btn btn-ghost btn-sm" onclick="removeHolding(${i})">✕</button></td>
     </tr>`;
   });
@@ -1145,16 +1167,25 @@ async function lookupTicker() {
   const ticker = document.getElementById('h-ticker').value.trim().toUpperCase();
   if (!ticker) return;
   const el = document.getElementById('ticker-lookup-result');
+  const yahoo = toYahooTicker(ticker);
+  const hint = yahoo !== ticker ? ` (looking up as <strong>${yahoo}</strong> on Yahoo Finance)` : '';
+
   const knownName = TICKER_NAMES[ticker];
-  if (knownName) { document.getElementById('h-name').value = knownName; el.textContent = '✓ ' + knownName; el.style.color = 'var(--green)'; return; }
-  el.textContent = 'Looking up price...'; el.style.color = 'var(--t2)';
+  if (knownName) {
+    document.getElementById('h-name').value = knownName;
+    el.innerHTML = `✓ ${knownName}${hint}`;
+    el.style.color = 'var(--green)';
+    return;
+  }
+  el.innerHTML = `Looking up${hint}…`;
+  el.style.color = 'var(--t2)';
   const data = await fetchYahooPrice(ticker);
   if (data) {
     document.getElementById('h-name').value = data.name || ticker;
-    el.textContent = `✓ Current price: $${data.price.toFixed(2)} ${data.currency||''}`;
+    el.innerHTML = `✓ Current price: <strong>$${data.price.toFixed(2)} ${data.currency || ''}</strong>${hint}`;
     el.style.color = 'var(--green)';
   } else {
-    el.textContent = 'Could not fetch — you can still add it manually';
+    el.innerHTML = `Could not fetch price — ticker may be delisted or unavailable. You can still add it manually. Try <strong>${yahoo}</strong> on <a href="https://finance.yahoo.com/quote/${yahoo}" target="_blank" style="color:var(--accent)">Yahoo Finance</a> to verify.`;
     el.style.color = 'var(--amber)';
   }
 }
@@ -1186,59 +1217,129 @@ function removeHolding(idx) {
 }
 
 // ─── PRICES ───
-async function fetchYahooPrice(symbol) {
-  const urls = [
-    `https://query1.finance.yahoo.com/v8/finance/chart/${symbol}?interval=1d&range=2d`,
-    `https://query2.finance.yahoo.com/v8/finance/chart/${symbol}?interval=1d&range=2d`
-  ];
-  for (const url of urls) {
+// ─── TICKER NORMALISATION ────────────────────────────────────────────────────
+// Yahoo Finance uses different ticker formats from what users type:
+//   QQC.F   → QQC-F.TO   (CAD-hedged ETF share classes: .F .B .U .A .E etc.)
+//   BTCC.B  → BTCC-B.TO
+//   CLF.U   → CLF-U.TO
+//   XEQT.TO → XEQT.TO   (standard TSX — unchanged)
+//   NVDA    → NVDA       (US stock — unchanged)
+function toYahooTicker(ticker) {
+  const t = ticker.trim().toUpperCase().replace(/['"]/g, '');
+  // Already has a recognised exchange suffix → return as-is
+  if (/\.(TO|V|NE|CN|CSE|TSX|US)$/i.test(t)) return t;
+  // Share-class suffix: 1–2 letters after a dot that aren't a known exchange code
+  const m = t.match(/^([A-Z0-9]+)\.([A-Z]{1,2})$/);
+  if (m && !['TO','VN','NE','CN'].includes(m[2])) return `${m[1]}-${m[2]}.TO`;
+  // No suffix → assume US-listed
+  return t;
+}
+
+// Fetch with a hard timeout (AbortController, works on all modern browsers)
+function fetchT(url, ms, opts = {}) {
+  const ctrl = new AbortController();
+  const id = setTimeout(() => ctrl.abort(), ms);
+  return fetch(url, { ...opts, signal: ctrl.signal }).finally(() => clearTimeout(id));
+}
+
+// Pull price & change% from a raw Yahoo Finance chart API response
+function extractYahooData(raw, fallback) {
+  const res = raw?.chart?.result?.[0];
+  if (!res) return null;
+  const m = res.meta;
+  const price = m.regularMarketPrice ?? m.previousClose;
+  if (!price) return null;
+  const prev = m.chartPreviousClose ?? m.previousClose ?? price;
+  return {
+    price,
+    change: prev ? ((price - prev) / prev) * 100 : 0,
+    name: m.longName || m.shortName || fallback,
+    currency: m.currency || (fallback.endsWith('.TO') ? 'CAD' : 'USD')
+  };
+}
+
+async function fetchYahooPrice(userTicker) {
+  const symbol  = toYahooTicker(userTicker);   // normalised for Yahoo
+  const baseUrl = `https://query1.finance.yahoo.com/v8/finance/chart/${symbol}?interval=1d&range=5d`;
+  const base2   = `https://query2.finance.yahoo.com/v8/finance/chart/${symbol}?interval=1d&range=5d`;
+
+  // 1 ── Direct (works when Yahoo allows CORS for this origin)
+  for (const url of [baseUrl, base2]) {
     try {
-      const r = await fetch(url, {headers:{'User-Agent':'Mozilla/5.0'}});
+      const r = await fetchT(url, 5000, { headers: { Accept: 'application/json' } });
       if (!r.ok) continue;
-      const d = await r.json();
-      const result = d?.chart?.result?.[0];
-      if (!result) continue;
-      const meta = result.meta;
-      const price = meta.regularMarketPrice || meta.previousClose;
-      const prevClose = meta.chartPreviousClose || meta.previousClose;
-      const change = prevClose ? ((price - prevClose) / prevClose) * 100 : 0;
-      return { price, change, name: meta.longName || meta.shortName || symbol, currency: meta.currency };
-    } catch(e) {}
+      const d = extractYahooData(await r.json(), symbol);
+      if (d) { console.log(`[price] ${userTicker}→${symbol} direct ✓ $${d.price}`); return d; }
+    } catch(_) {}
   }
+
+  // 2 ── allorigins.win proxy
   try {
-    const proxy = `https://api.allorigins.win/get?url=${encodeURIComponent(`https://query1.finance.yahoo.com/v8/finance/chart/${symbol}?interval=1d&range=2d`)}`;
-    const r = await fetch(proxy);
-    const d = await r.json();
-    const parsed = JSON.parse(d.contents);
-    const result = parsed?.chart?.result?.[0];
-    if (result) {
-      const meta = result.meta;
-      const price = meta.regularMarketPrice || meta.previousClose;
-      const prevClose = meta.chartPreviousClose || meta.previousClose;
-      const change = prevClose ? ((price-prevClose)/prevClose)*100 : 0;
-      return { price, change, name: meta.longName||meta.shortName||symbol, currency: meta.currency };
+    const proxy = `https://api.allorigins.win/get?url=${encodeURIComponent(baseUrl)}`;
+    const r = await fetchT(proxy, 8000);
+    if (r.ok) {
+      const wrapper = await r.json();
+      const d = extractYahooData(JSON.parse(wrapper.contents || '{}'), symbol);
+      if (d) { console.log(`[price] ${userTicker}→${symbol} allorigins ✓ $${d.price}`); return d; }
     }
-  } catch(e) {}
+  } catch(_) {}
+
+  // 3 ── corsproxy.io
+  try {
+    const proxy2 = `https://corsproxy.io/?${encodeURIComponent(baseUrl)}`;
+    const r = await fetchT(proxy2, 8000);
+    if (r.ok) {
+      const d = extractYahooData(await r.json(), symbol);
+      if (d) { console.log(`[price] ${userTicker}→${symbol} corsproxy ✓ $${d.price}`); return d; }
+    }
+  } catch(_) {}
+
+  // 4 ── thingproxy (last resort)
+  try {
+    const proxy3 = `https://thingproxy.freeboard.io/fetch/${baseUrl}`;
+    const r = await fetchT(proxy3, 8000);
+    if (r.ok) {
+      const d = extractYahooData(await r.json(), symbol);
+      if (d) { console.log(`[price] ${userTicker}→${symbol} thingproxy ✓ $${d.price}`); return d; }
+    }
+  } catch(_) {}
+
+  console.warn(`[price] ${userTicker}→${symbol} ALL proxies failed`);
   return null;
 }
 
 async function fetchPriceForHolding(ticker) {
   const data = await fetchYahooPrice(ticker);
-  if (data) { state.prices[ticker] = data; }
+  // Always key by the user's original ticker so the rest of the app matches
+  if (data) state.prices[ticker] = { ...data, yahooSymbol: toYahooTicker(ticker) };
+  else if (!state.prices[ticker]) state.prices[ticker] = null; // mark as failed
 }
 
 async function refreshAllPrices() {
   const p = getProfile();
   if (!p) return;
-  const holdings = p.holdings || [];
-  const tickers = [...new Set(holdings.map(h => h.ticker))];
+  const tickers = [...new Set((p.holdings || []).map(h => h.ticker))];
   if (!tickers.length) return;
+
   document.getElementById('refresh-icon').innerHTML = '<span class="spin" style="width:13px;height:13px;vertical-align:middle"></span>';
-  document.getElementById('topbar-update').textContent = 'Updating...';
-  await Promise.all(tickers.map(t => fetchPriceForHolding(t)));
+  document.getElementById('topbar-update').textContent = 'Fetching prices…';
+
+  // Stagger requests slightly to avoid hitting rate limits
+  const results = await Promise.allSettled(
+    tickers.map((t, i) => new Promise(res => setTimeout(() => fetchPriceForHolding(t).then(res), i * 300)))
+  );
+
+  const failed = tickers.filter(t => !state.prices[t]);
   state.lastPriceUpdate = new Date();
   document.getElementById('refresh-icon').textContent = '↻';
-  updateLastUpdated();
+
+  if (failed.length) {
+    document.getElementById('topbar-update').textContent =
+      `Updated ${new Date().toLocaleTimeString('en',{hour:'2-digit',minute:'2-digit'})} · ${failed.length} ticker${failed.length>1?'s':''} unavailable`;
+  } else {
+    updateLastUpdated();
+  }
+
   const activeTab = document.querySelector('.tab.active')?.getAttribute('onclick')?.match(/'(\w+)'/)?.[1];
   if (activeTab === 'holdings') renderHoldings();
   if (activeTab === 'overview' || !activeTab) renderOverview();
@@ -1279,76 +1380,179 @@ function handleCSVFile(event) {
 }
 
 function processCSV(rows, fname) {
-  if (!rows.length) { showImportResult('error', 'CSV appears empty.'); return; }
-  const headers = Object.keys(rows[0]).map(h => h.trim().toLowerCase());
-  const col = (names) => names.find(n => headers.includes(n)) || headers.find(h => names.some(n => h.includes(n)));
-  const dateCol = col(['date','transaction date','trade date']);
-  const typeCol = col(['activity','activity type','type','transaction type']);
-  const symCol = col(['symbol','ticker','security']);
-  const descCol = col(['description','name','security name']);
-  const qtyCol = col(['quantity','qty','shares','units']);
-  const priceCol = col(['price','unit price','market price']);
-  const valCol = col(['market value','value','amount','net amount','total']);
+  if (!rows.length) { showImportResult('warn', 'CSV appears empty — nothing to import.'); return; }
+
+  // ── Step 1: build a normalized→original header map ──────────────────
+  // Returns the ORIGINAL header key so row[key] works directly.
+  const rawHeaders = Object.keys(rows[0]);
+  const norm = s => s.trim().toLowerCase().replace(/\s+/g,' ').replace(/[^a-z0-9 ]/g,'');
+  const headerMap = {};                          // normalized → original key
+  rawHeaders.forEach(h => { headerMap[norm(h)] = h; });
+
+  function findCol(candidates) {
+    // 1. exact normalized match
+    for (const c of candidates) {
+      if (headerMap[c]) return headerMap[c];
+    }
+    // 2. header contains candidate substring
+    for (const [n, orig] of Object.entries(headerMap)) {
+      for (const c of candidates) {
+        if (n.includes(c)) return orig;
+      }
+    }
+    // 3. candidate contains header substring (short headers like "type","date","qty")
+    for (const [n, orig] of Object.entries(headerMap)) {
+      for (const c of candidates) {
+        if (c.includes(n) && n.length >= 3) return orig;
+      }
+    }
+    return null;
+  }
+
+  const dateCol = findCol(['date','transaction date','trade date','settled date','as of']);
+  const typeCol = findCol(['activity type','activity','transaction type','type','action','event']);
+  const symCol  = findCol(['symbol','ticker','stock symbol','security symbol','security','stock']);
+  const descCol = findCol(['description','desc','security name','security description','name','details']);
+  const qtyCol  = findCol(['quantity','qty','shares','units','number of shares','num shares']);
+  const priceCol= findCol(['price','unit price','book price','cost per share','avg price','average price']);
+  const valCol  = findCol(['market value','net amount','net','amount','value','total','proceeds','book value']);
+  const acctCol = findCol(['account type','account name','account','registered account']);
+  const curCol  = findCol(['currency','ccy']);
+
+  console.log('[WealthTrack CSV] Headers detected:', rawHeaders);
+  console.log('[WealthTrack CSV] Column mapping:', { dateCol, typeCol, symCol, descCol, qtyCol, priceCol, valCol, acctCol });
+
+  // Helper: get a string value from a row using the original header key
+  const getStr = (col, row) => col ? String(row[col] ?? '').trim() : '';
+  const getNum = (col, row) => {
+    const raw = getStr(col, row).replace(/[$,\s]/g,'');
+    const n = parseFloat(raw);
+    return isNaN(n) ? 0 : n;
+  };
+
+  // ── Step 2: detect CSV mode ──────────────────────────────────────────
+  // "Positions mode" = no activity-type column but has symbol + qty (current holdings snapshot)
+  const isPositions = !typeCol && symCol && qtyCol;
+
+  if (isPositions) {
+    console.log('[WealthTrack CSV] Detected POSITIONS mode (holdings snapshot)');
+    const added = [];
+    updateProfile(p => {
+      if (!p.holdings) p.holdings = [];
+      rows.forEach(row => {
+        const sym  = getStr(symCol, row).toUpperCase().replace(/['"]/g,'');
+        const qty  = Math.abs(getNum(qtyCol, row));
+        const cost = getNum(priceCol, row) || getNum(valCol, row) / (qty||1);
+        const name = getStr(descCol, row);
+        const acct = normalizeAccount(getStr(acctCol, row));
+        if (!sym || qty < 0.0001) return;
+        if (!p.holdings.find(h => h.ticker === sym)) {
+          p.holdings.push({ ticker:sym, name:name||TICKER_NAMES[sym]||sym, qty:Math.round(qty*1000)/1000, avgCost:Math.round(cost*100)/100, account:acct, currency:'CAD' });
+          added.push(sym);
+        }
+      });
+    });
+    showImportResult('success', `Added ${added.length} position${added.length!==1?'s':''}: ${added.join(', ')}`);
+    renderHoldings(); renderOverview(); renderTxLog();
+    if (added.length) refreshAllPrices();
+    return;
+  }
+
+  // ── Step 3: transaction mode ─────────────────────────────────────────
+  const BUY_RE  = /\b(buy|bought|purchase|purchased|market buy|limit buy|acquire|acquisition|contribution|deposit.+fund|reinvest)\b/i;
+  const SELL_RE = /\b(sell|sold|sale|market sell|limit sell|redeem|redemption)\b/i;
 
   const txs = [];
-  const holdingMap = {};
-  let imported = 0, skipped = 0;
+  const holdingMap = {};   // sym → { qty, totalCost, name, account }
+  const activitySeen = new Set();
+  let imported = 0;
 
   rows.forEach(row => {
-    const get = (c) => c ? (row[Object.keys(row).find(k=>k.trim().toLowerCase()===c)] || row[Object.keys(row).find(k=>k.trim().toLowerCase().includes(c?.split(' ')[0]))]) : '';
-    const date = get(dateCol)?.trim() || '';
-    const type = get(typeCol)?.trim().toLowerCase() || '';
-    const sym = get(symCol)?.trim().toUpperCase() || '';
-    const desc = get(descCol)?.trim() || '';
-    const qty = parseFloat(get(qtyCol)) || 0;
-    const price = parseFloat(get(priceCol)) || 0;
-    const val = Math.abs(parseFloat(get(valCol))) || 0;
+    const date = getStr(dateCol, row);
+    const type = getStr(typeCol, row);
+    const sym  = getStr(symCol,  row).toUpperCase().replace(/['"]/g,'');
+    const desc = getStr(descCol, row);
+    const qty  = Math.abs(getNum(qtyCol,   row));
+    const price= getNum(priceCol, row);
+    const val  = Math.abs(getNum(valCol,   row));
+    const acct = normalizeAccount(getStr(acctCol, row));
 
-    if (!date && !type) { skipped++; return; }
+    if (!date && !type && !sym) return;   // completely empty row
+    activitySeen.add(type || '(no type)');
 
-    const tx = { date: normalizeDate(date), type, symbol: sym, description: desc, qty, price, marketValue: val, netAmount: val };
-    txs.push(tx);
+    txs.push({ date:normalizeDate(date), type, symbol:sym, description:desc, qty, price, marketValue:val, account:acct });
     imported++;
 
-    if ((type.includes('buy') || type.includes('purchase')) && sym && qty > 0) {
-      if (!holdingMap[sym]) holdingMap[sym] = { qty: 0, totalCost: 0, name: desc };
+    const effectivePrice = price > 0 ? price : (qty > 0 ? val / qty : 0);
+
+    if (BUY_RE.test(type) && sym && qty > 0) {
+      if (!holdingMap[sym]) holdingMap[sym] = { qty:0, totalCost:0, name:desc, account:acct };
       holdingMap[sym].qty += qty;
-      holdingMap[sym].totalCost += qty * (price || val / qty);
-    } else if ((type.includes('sell') || type.includes('sale')) && sym && qty > 0) {
+      holdingMap[sym].totalCost += qty * effectivePrice;
+    } else if (SELL_RE.test(type) && sym && qty > 0) {
       if (holdingMap[sym]) holdingMap[sym].qty = Math.max(0, holdingMap[sym].qty - qty);
     }
   });
 
+  console.log('[WealthTrack CSV] Activity types seen:', [...activitySeen]);
+  console.log('[WealthTrack CSV] holdingMap:', holdingMap);
+
+  const added = [];
   updateProfile(p => {
-    p.transactions = [...(p.transactions || []), ...txs].sort((a,b) => new Date(a.date)-new Date(b.date));
+    if (!p.transactions) p.transactions = [];
+    p.transactions = [...p.transactions, ...txs].sort((a,b) => new Date(a.date)-new Date(b.date));
+    if (!p.holdings) p.holdings = [];
     Object.entries(holdingMap).forEach(([sym, data]) => {
-      if (data.qty <= 0.001) return;
+      if (data.qty < 0.0001) return;
       const avgCost = data.qty > 0 ? data.totalCost / data.qty : 0;
-      const existing = p.holdings?.find(h => h.ticker === sym);
-      if (!existing) {
-        if (!p.holdings) p.holdings = [];
-        p.holdings.push({ ticker: sym, name: data.name||TICKER_NAMES[sym]||sym, qty: Math.round(data.qty*1000)/1000, avgCost: Math.round(avgCost*100)/100, account: 'TFSA', currency: 'CAD' });
+      if (!p.holdings.find(h => h.ticker === sym)) {
+        p.holdings.push({ ticker:sym, name:data.name||TICKER_NAMES[sym]||sym, qty:Math.round(data.qty*1000)/1000, avgCost:Math.round(avgCost*100)/100, account:data.account||'TFSA', currency:'CAD' });
+        added.push(sym);
       }
     });
   });
 
-  showImportResult('success', `Imported ${imported} transactions from ${fname}. ${Object.keys(holdingMap).length} holdings updated.`);
-  renderTxLog();
-  renderHoldings();
-  renderOverview();
-  refreshAllPrices();
+  const holdingCount = added.length;
+  const typeList = [...activitySeen].slice(0,6).join(', ');
+
+  if (holdingCount === 0 && imported > 0) {
+    showImportResult('warn',
+      `Imported ${imported} transactions (types seen: <strong>${typeList}</strong>). ` +
+      `No buy transactions were matched — holdings not updated. ` +
+      `Open browser console (F12 → Console) to see full debug info, or add holdings manually using the "+ Add holding" button.`
+    );
+  } else {
+    showImportResult('success',
+      `Imported ${imported} transactions · ${holdingCount} holding${holdingCount!==1?'s':''} added${added.length ? ': ' + added.join(', ') : ''}.`
+    );
+  }
+
+  renderTxLog(); renderHoldings(); renderOverview();
+  if (added.length) refreshAllPrices();
+}
+
+function normalizeAccount(raw) {
+  if (!raw) return 'TFSA';
+  const u = raw.toUpperCase();
+  if (/TFSA|TAX.?FREE/.test(u)) return 'TFSA';
+  if (/FHSA|FIRST.?HOME/.test(u)) return 'FHSA';
+  if (/RRSP|RETIREMENT/.test(u)) return 'RRSP';
+  if (/PERSONAL|CASH|NON.?REG/.test(u)) return 'Personal';
+  return raw || 'TFSA';
 }
 
 function normalizeDate(str) {
   if (!str) return new Date().toISOString().slice(0,10);
-  const cleaned = str.replace(/\//g,'-');
+  const cleaned = str.replace(/\//g,'-').replace(/(\d{1,2})-(\d{1,2})-(\d{4})/,'$3-$2-$1');
   const d = new Date(cleaned);
-  return isNaN(d) ? str : d.toISOString().slice(0,10);
+  return isNaN(d.getTime()) ? str : d.toISOString().slice(0,10);
 }
 
 function showImportResult(type, msg) {
   const el = document.getElementById('import-result');
-  el.innerHTML = `<div class="alert ${type==='success'?'alert-green':'alert-amber'}"><span>${type==='success'?'✓':'⚠'}</span><div>${msg}</div></div>`;
+  const cls = type==='success' ? 'alert-green' : 'alert-amber';
+  const icon = type==='success' ? '✓' : '⚠';
+  el.innerHTML = `<div class="alert ${cls}"><span>${icon}</span><div>${msg}</div></div>`;
 }
 
 function renderTxLog() {
