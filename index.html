@@ -1,0 +1,1419 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Wealth Tracker</title>
+<link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;500;600;700&family=DM+Mono:ital,wght@0,400;0,500;1,400&family=Plus+Jakarta+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#0b0d11;--surface:#13161d;--surface2:#1a1e28;--surface3:#21263300;
+  --border:rgba(255,255,255,0.07);--border2:rgba(255,255,255,0.13);
+  --accent:#00d4aa;--accent-d:rgba(0,212,170,0.13);--accent-d2:rgba(0,212,170,0.06);
+  --green:#22c55e;--green-d:rgba(34,197,94,0.13);
+  --red:#ef4444;--red-d:rgba(239,68,68,0.13);
+  --amber:#f59e0b;--amber-d:rgba(245,158,11,0.13);
+  --blue:#60a5fa;--blue-d:rgba(96,165,250,0.13);
+  --purple:#a78bfa;--purple-d:rgba(167,139,250,0.13);
+  --t1:#eef2f8;--t2:#8892a4;--t3:#4a5568;
+  --r:10px;--r2:16px;
+}
+body{background:var(--bg);color:var(--t1);font-family:'Plus Jakarta Sans',sans-serif;font-size:14px;min-height:100vh;overflow-x:hidden}
+h1,h2,h3,.mono{font-family:'Syne',sans-serif}
+.num{font-family:'DM Mono',monospace}
+
+/* ─── LAYOUT ─── */
+#app{display:flex;flex-direction:column;min-height:100vh}
+.topbar{display:flex;align-items:center;gap:12px;padding:0 24px;height:56px;border-bottom:1px solid var(--border);background:var(--surface);position:sticky;top:0;z-index:100}
+.topbar-logo{font-family:'Syne',sans-serif;font-size:16px;font-weight:700;color:var(--accent);letter-spacing:-.3px;margin-right:auto}
+.topbar-logo span{color:var(--t2);font-weight:400}
+.avatar-btn{width:32px;height:32px;border-radius:50%;background:var(--accent-d);border:1px solid var(--accent);color:var(--accent);font-family:'DM Mono',monospace;font-size:12px;display:flex;align-items:center;justify-content:center;cursor:pointer;transition:.15s}
+.avatar-btn:hover{background:var(--accent);color:#000}
+.chip{display:inline-flex;align-items:center;gap:5px;font-size:11px;padding:3px 9px;border-radius:20px;font-weight:500}
+.chip-green{background:var(--green-d);color:var(--green)}
+.chip-red{background:var(--red-d);color:var(--red)}
+.chip-amber{background:var(--amber-d);color:var(--amber)}
+.chip-blue{background:var(--blue-d);color:var(--blue)}
+.chip-accent{background:var(--accent-d);color:var(--accent)}
+.chip-t2{background:rgba(136,146,164,0.12);color:var(--t2)}
+.dot{width:6px;height:6px;border-radius:50%;background:currentColor;display:inline-block}
+.page{display:none;flex:1;padding:24px}
+.page.active{display:block}
+.screen{display:none}
+.screen.active{display:flex;flex-direction:column;flex:1}
+
+/* ─── TABS ─── */
+.tabs{display:flex;gap:2px;border-bottom:1px solid var(--border);margin-bottom:24px;overflow-x:auto}
+.tab{padding:10px 16px;font-size:13px;color:var(--t2);cursor:pointer;border-bottom:2px solid transparent;transition:.15s;white-space:nowrap}
+.tab.active{color:var(--accent);border-bottom-color:var(--accent)}
+.tab:hover:not(.active){color:var(--t1)}
+.tab-panel{display:none}
+.tab-panel.active{display:block}
+
+/* ─── CARDS ─── */
+.card{background:var(--surface);border:1px solid var(--border);border-radius:var(--r2);padding:20px 22px}
+.card-sm{background:var(--surface);border:1px solid var(--border);border-radius:var(--r);padding:16px 18px}
+.grid{display:grid;gap:14px}
+.g2{grid-template-columns:repeat(auto-fit,minmax(240px,1fr))}
+.g3{grid-template-columns:repeat(auto-fit,minmax(180px,1fr))}
+.g4{grid-template-columns:repeat(auto-fit,minmax(150px,1fr))}
+.metric-label{font-size:11px;color:var(--t2);text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px}
+.metric-val{font-family:'DM Mono',monospace;font-size:26px;font-weight:500;letter-spacing:-.5px}
+.metric-sub{font-size:12px;color:var(--t2);margin-top:4px}
+.section-title{font-family:'Syne',sans-serif;font-size:13px;font-weight:600;text-transform:uppercase;letter-spacing:.08em;color:var(--t2);margin-bottom:14px}
+
+/* ─── TABLE ─── */
+.tbl{width:100%;border-collapse:collapse}
+.tbl th{text-align:left;font-size:11px;font-weight:500;color:var(--t2);text-transform:uppercase;letter-spacing:.06em;padding:8px 12px;border-bottom:1px solid var(--border)}
+.tbl td{padding:12px;border-bottom:1px solid var(--border);font-size:13px}
+.tbl tr:last-child td{border-bottom:none}
+.tbl tr:hover td{background:rgba(255,255,255,0.02)}
+.tbl td.num{font-family:'DM Mono',monospace;font-size:12px}
+
+/* ─── BUTTONS ─── */
+btn,.btn{display:inline-flex;align-items:center;gap:7px;padding:9px 18px;border-radius:var(--r);border:1px solid var(--border2);background:transparent;color:var(--t1);font-size:13px;font-family:'Plus Jakarta Sans',sans-serif;cursor:pointer;transition:.15s;text-decoration:none}
+.btn:hover{border-color:var(--border2);background:var(--surface2)}
+.btn-accent{background:var(--accent);color:#000;border-color:var(--accent);font-weight:600}
+.btn-accent:hover{background:#00bfa0;border-color:#00bfa0}
+.btn-ghost{border:none;background:transparent;color:var(--t2)}
+.btn-ghost:hover{color:var(--t1);background:rgba(255,255,255,0.05)}
+.btn-sm{padding:6px 12px;font-size:12px}
+.btn-danger{border-color:var(--red-d);color:var(--red)}
+.btn-danger:hover{background:var(--red-d)}
+
+/* ─── FORMS ─── */
+.form-group{margin-bottom:18px}
+.form-label{display:block;font-size:12px;color:var(--t2);margin-bottom:6px;font-weight:500}
+.form-input,.form-select{width:100%;background:var(--surface2);border:1px solid var(--border2);border-radius:var(--r);padding:10px 14px;color:var(--t1);font-size:13px;font-family:'Plus Jakarta Sans',sans-serif;outline:none;transition:.15s}
+.form-input:focus,.form-select:focus{border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-d2)}
+.form-select option{background:var(--surface2);color:var(--t1)}
+.form-row{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+.form-hint{font-size:11px;color:var(--t3);margin-top:4px}
+.radio-group{display:flex;gap:8px;flex-wrap:wrap}
+.radio-option{display:flex;align-items:center;gap:8px;padding:9px 14px;border:1px solid var(--border2);border-radius:var(--r);cursor:pointer;transition:.15s;font-size:13px}
+.radio-option:hover{border-color:var(--border2);background:var(--surface2)}
+.radio-option.selected{border-color:var(--accent);background:var(--accent-d);color:var(--accent)}
+.radio-option input{display:none}
+
+/* ─── PROGRESS ─── */
+.progress-wrap{background:var(--surface2);border-radius:20px;height:7px;overflow:hidden}
+.progress-bar{height:7px;border-radius:20px;transition:.4s}
+
+/* ─── DRAG DROP ─── */
+.drop-zone{border:1.5px dashed var(--border2);border-radius:var(--r2);padding:40px;text-align:center;cursor:pointer;transition:.15s;background:var(--surface)}
+.drop-zone:hover,.drop-zone.drag-over{border-color:var(--accent);background:var(--accent-d2)}
+.drop-icon{font-size:36px;margin-bottom:12px;opacity:.5}
+
+/* ─── LANDING ─── */
+#screen-landing{align-items:center;justify-content:center;padding:40px 24px;min-height:calc(100vh - 56px)}
+.landing-hero{text-align:center;max-width:480px;margin:0 auto 48px}
+.landing-hero h1{font-size:40px;font-weight:700;letter-spacing:-1.5px;line-height:1.1;margin-bottom:12px}
+.landing-hero h1 span{color:var(--accent)}
+.landing-hero p{color:var(--t2);font-size:15px;line-height:1.7;margin-bottom:28px}
+.profiles-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:12px;max-width:600px;width:100%;margin:0 auto}
+.profile-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--r2);padding:20px;text-align:center;cursor:pointer;transition:.15s}
+.profile-card:hover{border-color:var(--border2);background:var(--surface2);transform:translateY(-2px)}
+.profile-avatar{width:52px;height:52px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-family:'DM Mono',monospace;font-size:16px;font-weight:500;margin:0 auto 12px}
+.profile-name{font-family:'Syne',sans-serif;font-size:14px;font-weight:600;margin-bottom:4px}
+.profile-sub{font-size:12px;color:var(--t2)}
+.add-profile-card{background:transparent;border:1.5px dashed var(--border2);border-radius:var(--r2);padding:20px;text-align:center;cursor:pointer;transition:.15s;color:var(--t2)}
+.add-profile-card:hover{border-color:var(--accent);color:var(--accent);background:var(--accent-d2)}
+
+/* ─── ONBOARDING ─── */
+#screen-onboarding{padding:32px 24px;align-items:center;max-width:560px;margin:0 auto;width:100%}
+.ob-header{margin-bottom:28px}
+.ob-step-bar{display:flex;gap:6px;margin-bottom:24px}
+.ob-step{height:3px;border-radius:2px;flex:1;background:var(--surface2);transition:.3s}
+.ob-step.done{background:var(--accent)}
+.ob-step.active{background:var(--accent);opacity:.5}
+.ob-step-label{font-size:11px;color:var(--t2);margin-bottom:8px}
+
+/* ─── BADGE ─── */
+.badge-acct{display:inline-block;font-size:10px;font-weight:600;padding:2px 7px;border-radius:4px;text-transform:uppercase;letter-spacing:.05em}
+.badge-tfsa{background:var(--accent-d);color:var(--accent)}
+.badge-fhsa{background:var(--blue-d);color:var(--blue)}
+.badge-rrsp{background:var(--purple-d);color:var(--purple)}
+.badge-other{background:rgba(136,146,164,0.12);color:var(--t2)}
+
+/* ─── HOLDING ROW ─── */
+.holding-change-pos{color:var(--green);font-family:'DM Mono',monospace;font-size:12px}
+.holding-change-neg{color:var(--red);font-family:'DM Mono',monospace;font-size:12px}
+.ticker-sym{font-family:'DM Mono',monospace;font-size:13px;font-weight:500;letter-spacing:.03em}
+
+/* ─── ROOM GAUGE ─── */
+.room-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--r2);padding:20px 22px}
+.room-title{font-family:'Syne',sans-serif;font-size:14px;font-weight:600;margin-bottom:4px}
+.room-sub{font-size:12px;color:var(--t2);margin-bottom:16px}
+
+/* ─── ALERT ─── */
+.alert{border-radius:var(--r);padding:12px 16px;font-size:13px;margin-bottom:16px;display:flex;align-items:flex-start;gap:10px}
+.alert-amber{background:var(--amber-d);border:1px solid rgba(245,158,11,0.2);color:var(--amber)}
+.alert-green{background:var(--green-d);border:1px solid rgba(34,197,94,0.2);color:var(--green)}
+.alert-blue{background:var(--blue-d);border:1px solid rgba(96,165,250,0.2);color:var(--blue)}
+
+/* ─── SPINNER ─── */
+.spin{width:16px;height:16px;border:2px solid var(--border2);border-top-color:var(--accent);border-radius:50%;animation:spin .6s linear infinite;display:inline-block}
+@keyframes spin{to{transform:rotate(360deg)}}
+
+/* ─── DEPLOY GUIDE ─── */
+.step-item{display:flex;gap:14px;margin-bottom:18px}
+.step-circle{width:28px;height:28px;border-radius:50%;background:var(--accent-d);color:var(--accent);display:flex;align-items:center;justify-content:center;font-family:'DM Mono',monospace;font-size:12px;font-weight:500;flex-shrink:0;margin-top:2px}
+.step-body p{font-size:13px;color:var(--t1);margin-bottom:4px;font-weight:500}
+.step-body span{font-size:12px;color:var(--t2)}
+.code-block{background:var(--surface2);border:1px solid var(--border);border-radius:var(--r);padding:10px 14px;font-family:'DM Mono',monospace;font-size:12px;color:var(--accent);margin-top:6px;word-break:break-all}
+
+/* ─── MISC ─── */
+.divider{height:1px;background:var(--border);margin:20px 0}
+.flex-between{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px}
+.flex-gap{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.text-t2{color:var(--t2)}
+.text-green{color:var(--green)}
+.text-red{color:var(--red)}
+.text-accent{color:var(--accent)}
+.text-amber{color:var(--amber)}
+.mt-1{margin-top:8px}.mt-2{margin-top:14px}.mt-3{margin-top:20px}.mt-4{margin-top:28px}
+.mb-1{margin-bottom:8px}.mb-2{margin-bottom:14px}.mb-3{margin-bottom:20px}
+.hidden{display:none!important}
+.refresh-info{font-size:11px;color:var(--t3);font-family:'DM Mono',monospace}
+.ticker-search-row{display:flex;gap:8px;margin-bottom:14px}
+.tag{display:inline-flex;align-items:center;gap:4px;font-size:11px;padding:3px 8px;border-radius:6px;border:1px solid var(--border);color:var(--t2)}
+.empty-state{text-align:center;padding:48px 24px;color:var(--t2)}
+.empty-state h3{font-family:'Syne',sans-serif;font-size:16px;color:var(--t1);margin-bottom:8px}
+.modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:200;display:flex;align-items:center;justify-content:center;padding:20px}
+.modal{background:var(--surface);border:1px solid var(--border2);border-radius:var(--r2);padding:24px;max-width:460px;width:100%;max-height:90vh;overflow-y:auto}
+.modal-title{font-family:'Syne',sans-serif;font-size:16px;font-weight:600;margin-bottom:20px;display:flex;align-items:center;justify-content:space-between}
+</style>
+</head>
+<body>
+<div id="app">
+  <!-- TOP BAR -->
+  <div class="topbar">
+    <div class="topbar-logo">Wealth<span>Track</span></div>
+    <div id="topbar-update" class="refresh-info hidden"></div>
+    <div id="topbar-refresh" class="btn btn-sm hidden" onclick="refreshAllPrices()">
+      <span id="refresh-icon">↻</span> Refresh
+    </div>
+    <div id="topbar-profile" class="hidden" style="display:flex;align-items:center;gap:8px">
+      <span id="topbar-name" style="font-size:12px;color:var(--t2)"></span>
+      <div id="topbar-avatar" class="avatar-btn" onclick="goToLanding()">?</div>
+    </div>
+  </div>
+
+  <!-- ════════ SCREEN: LANDING ════════ -->
+  <div id="screen-landing" class="screen active">
+    <div class="landing-hero">
+      <h1>Your <span>wealth</span>,<br>fully tracked.</h1>
+      <p>Connect your Wealthsimple portfolio, track live prices, monitor contribution room, and build long-term wealth — all in one place.</p>
+    </div>
+    <div id="profiles-grid" class="profiles-grid"></div>
+    <p class="text-t2 mt-3" style="font-size:12px;text-align:center;max-width:380px;margin:20px auto 0">All data is stored locally in your browser. Nothing leaves your device.</p>
+  </div>
+
+  <!-- ════════ SCREEN: ONBOARDING ════════ -->
+  <div id="screen-onboarding" class="screen">
+    <div class="ob-header">
+      <div class="ob-step-label" id="ob-step-label">Step 1 of 5</div>
+      <div class="ob-step-bar" id="ob-step-bar">
+        <div class="ob-step active"></div><div class="ob-step"></div>
+        <div class="ob-step"></div><div class="ob-step"></div><div class="ob-step"></div>
+      </div>
+    </div>
+    <div id="ob-content"></div>
+  </div>
+
+  <!-- ════════ SCREEN: DASHBOARD ════════ -->
+  <div id="screen-dashboard" class="screen">
+    <div id="dash-page" class="page active">
+      <div class="tabs" id="dash-tabs">
+        <div class="tab active" onclick="switchDashTab('overview',this)">Overview</div>
+        <div class="tab" onclick="switchDashTab('holdings',this)">Holdings</div>
+        <div class="tab" onclick="switchDashTab('accounts',this)">Accounts &amp; Room</div>
+        <div class="tab" onclick="switchDashTab('import',this)">Import CSV</div>
+        <div class="tab" onclick="switchDashTab('deploy',this)">Deploy Guide</div>
+      </div>
+
+      <!-- OVERVIEW TAB -->
+      <div id="tab-overview" class="tab-panel active">
+        <div class="flex-between mb-3">
+          <div>
+            <h2 id="ov-greeting" style="font-size:20px;font-weight:700;letter-spacing:-.3px"></h2>
+            <p id="ov-subline" style="font-size:12px;color:var(--t2);margin-top:3px"></p>
+          </div>
+        </div>
+        <div class="grid g4 mb-3" id="ov-metric-cards"></div>
+        <div class="grid g2 mb-3">
+          <div class="card">
+            <div class="section-title">Portfolio value over time</div>
+            <div style="position:relative;height:200px"><canvas id="chart-value" role="img" aria-label="Portfolio value over time chart">Portfolio growth chart.</canvas></div>
+          </div>
+          <div class="card">
+            <div class="section-title">Allocation by account</div>
+            <div style="position:relative;height:160px"><canvas id="chart-alloc" role="img" aria-label="Account allocation donut chart">Allocation breakdown.</canvas></div>
+            <div id="alloc-legend" style="display:flex;flex-direction:column;gap:6px;margin-top:14px"></div>
+          </div>
+        </div>
+        <div class="card">
+          <div class="section-title">Top holdings</div>
+          <div id="ov-holdings-table"></div>
+        </div>
+      </div>
+
+      <!-- HOLDINGS TAB -->
+      <div id="tab-holdings" class="tab-panel">
+        <div class="flex-between mb-3">
+          <div class="section-title" style="margin-bottom:0">Live holdings</div>
+          <div class="flex-gap">
+            <span id="price-last-updated" class="refresh-info"></span>
+            <button class="btn btn-sm" onclick="refreshAllPrices()"><span id="refresh-spin-h"></span>↻ Refresh prices</button>
+            <button class="btn btn-sm btn-accent" onclick="openAddHolding()">+ Add holding</button>
+          </div>
+        </div>
+        <div id="holdings-alert" class="hidden"></div>
+        <div class="card">
+          <table class="tbl" id="holdings-table">
+            <thead><tr>
+              <th>Ticker</th><th>Name</th><th>Account</th><th>Qty</th>
+              <th>Avg cost</th><th>Current</th><th>Mkt value</th><th>Gain / Loss</th><th></th>
+            </tr></thead>
+            <tbody id="holdings-tbody"></tbody>
+          </table>
+          <div id="holdings-empty" class="empty-state hidden">
+            <h3>No holdings yet</h3>
+            <p>Add your first holding or import a Wealthsimple CSV</p>
+            <div class="flex-gap" style="justify-content:center;margin-top:14px">
+              <button class="btn btn-accent" onclick="openAddHolding()">+ Add holding</button>
+              <button class="btn" onclick="switchDashTab('import',document.querySelectorAll('.tab')[3])">Import CSV</button>
+            </div>
+          </div>
+        </div>
+        <div class="grid g4 mt-3" id="holdings-summary-cards"></div>
+      </div>
+
+      <!-- ACCOUNTS & ROOM TAB -->
+      <div id="tab-accounts" class="tab-panel">
+        <div class="section-title">Tax-advantaged accounts — contribution room tracker</div>
+        <div id="room-cards" class="grid g3 mb-3"></div>
+        <div class="card mt-3">
+          <div class="section-title">Contribution room breakdown</div>
+          <div style="position:relative;height:220px"><canvas id="chart-room" role="img" aria-label="Contribution room bar chart">Contribution room breakdown.</canvas></div>
+        </div>
+        <div class="card mt-3">
+          <div class="section-title">Key dates &amp; milestones</div>
+          <div id="milestones-list"></div>
+        </div>
+      </div>
+
+      <!-- IMPORT CSV TAB -->
+      <div id="tab-import" class="tab-panel">
+        <div class="grid g2">
+          <div>
+            <div class="section-title">Import Wealthsimple CSV</div>
+            <div class="alert alert-blue mb-2">
+              <span>ℹ</span>
+              <div>In Wealthsimple: go to <strong>Account → Activity → Download</strong>. Download each account separately (TFSA, FHSA etc.) and import them here.</div>
+            </div>
+            <div class="drop-zone" id="drop-zone" onclick="document.getElementById('csv-file').click()">
+              <div class="drop-icon">📂</div>
+              <p style="font-size:14px;font-weight:500;margin-bottom:4px">Drop your CSV here</p>
+              <p class="text-t2" style="font-size:12px">or click to browse files</p>
+              <input type="file" id="csv-file" accept=".csv" style="display:none" onchange="handleCSVFile(event)">
+            </div>
+            <div id="import-result" class="mt-2"></div>
+          </div>
+          <div>
+            <div class="section-title">Expected CSV format</div>
+            <div class="card-sm">
+              <p style="font-size:12px;color:var(--t2);margin-bottom:10px">Wealthsimple exports look like this — the importer handles column name variations automatically:</p>
+              <div class="code-block" style="color:var(--t2);font-size:11px;white-space:pre-wrap">Date,Activity,Symbol,Description,Quantity,Price,Market Value
+2025-11-01,Buy,XEQT,iShares Core Equity,10,30.52,305.20
+2025-10-15,Deposit,,Transfer in,,,5000.00
+2025-09-20,Buy,SHOP,Shopify Inc,2,112.40,224.80</div>
+            </div>
+            <div class="section-title mt-3">Imported transactions</div>
+            <div class="card-sm">
+              <div id="tx-log" style="max-height:300px;overflow-y:auto">
+                <p class="text-t2" style="font-size:12px">No transactions imported yet.</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- DEPLOY GUIDE TAB -->
+      <div id="tab-deploy" class="tab-panel">
+        <div class="grid g2">
+          <div>
+            <div class="section-title">Deploy to GitHub Pages (free &amp; permanent)</div>
+            <div class="alert alert-green mb-3">
+              <span>✓</span>
+              <div>GitHub Pages is free, requires no server, and gives you a permanent URL at <strong>username.github.io/repo-name</strong></div>
+            </div>
+            <div class="step-item">
+              <div class="step-circle">1</div>
+              <div class="step-body">
+                <p>Create a GitHub account</p>
+                <span>Go to github.com and sign up if you haven't already</span>
+              </div>
+            </div>
+            <div class="step-item">
+              <div class="step-circle">2</div>
+              <div class="step-body">
+                <p>Create a new repository</p>
+                <span>Click "New repository" → name it <code style="background:var(--surface2);padding:1px 5px;border-radius:4px;font-size:11px">portfolio-tracker</code> → set to Public → Create</span>
+              </div>
+            </div>
+            <div class="step-item">
+              <div class="step-circle">3</div>
+              <div class="step-body">
+                <p>Upload this file</p>
+                <span>Click "uploading an existing file" → drag the <code style="background:var(--surface2);padding:1px 5px;border-radius:4px;font-size:11px">index.html</code> you downloaded → Commit changes</span>
+              </div>
+            </div>
+            <div class="step-item">
+              <div class="step-circle">4</div>
+              <div class="step-body">
+                <p>Enable GitHub Pages</p>
+                <span>Go to Settings → Pages → Source: Deploy from branch → Branch: main / (root) → Save</span>
+              </div>
+            </div>
+            <div class="step-item">
+              <div class="step-circle">5</div>
+              <div class="step-body">
+                <p>Visit your live URL</p>
+                <span>After ~1 minute, your dashboard is live at:</span>
+                <div class="code-block">https://[your-username].github.io/portfolio-tracker</div>
+              </div>
+            </div>
+            <div class="alert alert-amber mt-2">
+              <span>⚠</span>
+              <div><strong>Note on data:</strong> Your profile data is stored in your browser's localStorage. Each device/browser will have its own data — it doesn't sync across devices automatically. To move your data, use the Export/Import buttons below.</div>
+            </div>
+            <div class="flex-gap mt-3">
+              <button class="btn btn-accent" onclick="exportAllData()">Export all data</button>
+              <button class="btn" onclick="document.getElementById('import-data-file').click()">Import data backup</button>
+              <input type="file" id="import-data-file" accept=".json" style="display:none" onchange="importAllData(event)">
+            </div>
+          </div>
+          <div>
+            <div class="section-title">Update your dashboard</div>
+            <div class="card-sm mb-3">
+              <p style="font-size:13px;margin-bottom:10px">When a new version of this file is available:</p>
+              <div class="step-item" style="margin-bottom:10px">
+                <div class="step-circle" style="font-size:10px">→</div>
+                <div class="step-body"><span>Go to your GitHub repo → click <code style="background:var(--surface2);padding:1px 5px;border-radius:4px;font-size:11px">index.html</code> → pencil icon → paste new code → Commit</span></div>
+              </div>
+              <div class="step-item">
+                <div class="step-circle" style="font-size:10px">→</div>
+                <div class="step-body"><span>Your profiles and data are in localStorage — they survive updates automatically as long as you use the same browser</span></div>
+              </div>
+            </div>
+            <div class="section-title">Share with a friend</div>
+            <div class="card-sm">
+              <p style="font-size:13px;color:var(--t2);line-height:1.7">Since each browser has its own localStorage, a friend just needs to visit the same URL and create their own profile. All profiles are stored locally — completely private per device.</p>
+            </div>
+            <div class="section-title mt-3">Stock price data</div>
+            <div class="card-sm">
+              <p style="font-size:13px;color:var(--t2);line-height:1.7">Prices are pulled from Yahoo Finance every <strong style="color:var(--t1)">5 minutes</strong> while the Holdings tab is open. Canadian stocks use the <code style="background:var(--surface2);padding:1px 5px;border-radius:4px;font-size:11px">.TO</code> suffix (e.g. <code style="background:var(--surface2);padding:1px 5px;border-radius:4px;font-size:11px">XEQT.TO</code>). If prices fail to load, the app uses your last-fetched values as fallback.</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ─── ADD HOLDING MODAL ─── -->
+<div id="modal-holding" class="modal-overlay hidden" onclick="if(event.target===this)closeModal('modal-holding')">
+  <div class="modal">
+    <div class="modal-title">Add holding <span onclick="closeModal('modal-holding')" style="cursor:pointer;color:var(--t2);font-size:18px">×</span></div>
+    <div class="form-group">
+      <label class="form-label">Ticker symbol</label>
+      <div style="display:flex;gap:8px">
+        <input class="form-input" id="h-ticker" placeholder="e.g. XEQT.TO or NVDA" oninput="this.value=this.value.toUpperCase()">
+        <button class="btn btn-sm" onclick="lookupTicker()">Look up</button>
+      </div>
+      <div id="ticker-lookup-result" class="form-hint mt-1"></div>
+    </div>
+    <div class="form-row">
+      <div class="form-group">
+        <label class="form-label">Company name</label>
+        <input class="form-input" id="h-name" placeholder="e.g. iShares Core Equity">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Account</label>
+        <select class="form-select" id="h-account">
+          <option value="TFSA">TFSA</option>
+          <option value="FHSA">FHSA</option>
+          <option value="RRSP">RRSP</option>
+          <option value="Personal">Personal (non-registered)</option>
+        </select>
+      </div>
+    </div>
+    <div class="form-row">
+      <div class="form-group">
+        <label class="form-label">Quantity</label>
+        <input class="form-input" id="h-qty" type="number" min="0" step="0.001" placeholder="0.00">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Average cost (per share)</label>
+        <input class="form-input" id="h-cost" type="number" min="0" step="0.01" placeholder="0.00">
+      </div>
+    </div>
+    <div class="form-group">
+      <label class="form-label">Currency</label>
+      <div class="radio-group">
+        <label class="radio-option selected" id="radio-cad" onclick="selectCurrency('CAD')"><input type="radio" name="currency" value="CAD" checked>CAD</label>
+        <label class="radio-option" id="radio-usd" onclick="selectCurrency('USD')"><input type="radio" name="currency" value="USD">USD</label>
+      </div>
+    </div>
+    <div class="flex-gap" style="justify-content:flex-end;margin-top:4px">
+      <button class="btn" onclick="closeModal('modal-holding')">Cancel</button>
+      <button class="btn btn-accent" onclick="saveHolding()">Add holding</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// ═══════════════════════════════════════════════
+// STATE
+// ═══════════════════════════════════════════════
+const TFSA_LIMITS = {
+  2009:5000,2010:5000,2011:5000,2012:5000,
+  2013:5500,2014:5500,2015:10000,2016:5500,
+  2017:5500,2018:5500,2019:6000,2020:6000,
+  2021:6000,2022:6000,2023:6500,2024:7000,
+  2025:7000,2026:7000
+};
+const FHSA_ANNUAL = 8000;
+const FHSA_LIFETIME = 40000;
+const RRSP_MAX_2026 = 33810;
+const AVATAR_COLORS = [
+  ['#00d4aa','#0b2d28'],['#60a5fa','#0d1e33'],['#a78bfa','#1e1433'],
+  ['#f59e0b','#2d1f08'],['#f472b6','#2d0f20'],['#34d399','#0b2919']
+];
+const TICKER_NAMES = {
+  'XEQT.TO':'iShares Core Equity','VFV.TO':'Vanguard S&P 500','XIT.TO':'iShares Capped IT',
+  'QQC.F':'Invesco NASDAQ 100','SHOP.TO':'Shopify Inc','CSU.TO':'Constellation Software',
+  'RY.TO':'Royal Bank of Canada','TD.TO':'TD Bank','CCO.TO':'Cameco Corp',
+  'NVDA':'NVIDIA Corp','MSFT':'Microsoft','AMZN':'Amazon','AAPL':'Apple',
+  'BTCC.B.TO':'Purpose Bitcoin ETF','AMD':'Advanced Micro Devices','GOOGL':'Alphabet Inc',
+  'XBAL.TO':'iShares Balanced ETF','VGRO.TO':'Vanguard Growth ETF','HXT.TO':'Horizons TSX 60'
+};
+
+let state = { profiles: [], activeProfileId: null, prices: {}, lastPriceUpdate: null };
+let obStep = 0;
+let obData = {};
+let editHoldingIdx = null;
+let priceRefreshInterval = null;
+let valueChartInst = null;
+let allocChartInst = null;
+let roomChartInst = null;
+
+// ═══════════════════════════════════════════════
+// STORAGE
+// ═══════════════════════════════════════════════
+function loadState() {
+  try { const s = localStorage.getItem('wt_state'); if (s) state = {...state, ...JSON.parse(s)}; } catch(e){}
+}
+function saveState() {
+  const toSave = { profiles: state.profiles, activeProfileId: state.activeProfileId };
+  localStorage.setItem('wt_state', JSON.stringify(toSave));
+}
+function getProfile() {
+  return state.profiles.find(p => p.id === state.activeProfileId) || null;
+}
+function updateProfile(fn) {
+  const idx = state.profiles.findIndex(p => p.id === state.activeProfileId);
+  if (idx >= 0) { fn(state.profiles[idx]); saveState(); }
+}
+
+// ═══════════════════════════════════════════════
+// SCREENS
+// ═══════════════════════════════════════════════
+function showScreen(id) {
+  document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+  document.getElementById('screen-' + id).classList.add('active');
+}
+function goToLanding() {
+  stopPriceRefresh();
+  document.getElementById('topbar-profile').classList.add('hidden');
+  document.getElementById('topbar-refresh').classList.add('hidden');
+  document.getElementById('topbar-update').classList.add('hidden');
+  state.activeProfileId = null;
+  renderLanding();
+  showScreen('landing');
+}
+
+// ═══════════════════════════════════════════════
+// LANDING
+// ═══════════════════════════════════════════════
+function renderLanding() {
+  const grid = document.getElementById('profiles-grid');
+  grid.innerHTML = '';
+  state.profiles.forEach(p => {
+    const [fg, bg] = AVATAR_COLORS[(p.colorIdx ?? 0) % AVATAR_COLORS.length];
+    const totalVal = (p.holdings||[]).reduce((s,h) => s + (h.qty * (state.prices[h.ticker]?.price || h.avgCost)), 0);
+    const div = document.createElement('div');
+    div.className = 'profile-card';
+    div.innerHTML = `
+      <div class="profile-avatar" style="background:${bg};color:${fg}">${p.initials}</div>
+      <div class="profile-name">${p.name}</div>
+      <div class="profile-sub">${p.accounts?.tfsa?.openYear ? 'TFSA · ' : ''}${p.accounts?.fhsa?.openYear ? 'FHSA · ' : ''}${p.answers?.risk || 'Investor'}</div>
+      ${totalVal > 0 ? `<div class="num mt-1 text-accent" style="font-size:13px">$${fmt(totalVal)}</div>` : ''}`;
+    div.onclick = () => loadProfile(p.id);
+    grid.appendChild(div);
+  });
+  const addDiv = document.createElement('div');
+  addDiv.className = 'add-profile-card';
+  addDiv.innerHTML = `<div style="font-size:28px;margin-bottom:8px">+</div><div style="font-size:13px;font-weight:500">New profile</div><div style="font-size:11px;margin-top:3px">Add investor</div>`;
+  addDiv.onclick = () => startOnboarding();
+  grid.appendChild(addDiv);
+}
+
+// ═══════════════════════════════════════════════
+// ONBOARDING
+// ═══════════════════════════════════════════════
+const OB_STEPS = [
+  { label: 'About you', render: renderObStep0 },
+  { label: 'Your accounts', render: renderObStep1 },
+  { label: 'Investment profile', render: renderObStep2 },
+  { label: 'TFSA details', render: renderObStep3 },
+  { label: 'Current holdings', render: renderObStep4 },
+];
+
+function startOnboarding(existing) {
+  // Guard: ignore DOM Event objects passed accidentally via onclick
+  const isProfile = existing && typeof existing === 'object' && existing.id && existing.name;
+  obStep = 0;
+  obData = isProfile ? {...existing} : { id: 'p_' + Date.now(), colorIdx: state.profiles.length % AVATAR_COLORS.length };
+  showScreen('onboarding');
+  renderObCurrentStep();
+}
+
+function renderObCurrentStep() {
+  const step = OB_STEPS[obStep];
+  document.getElementById('ob-step-label').textContent = `Step ${obStep + 1} of ${OB_STEPS.length} — ${step.label}`;
+  const bars = document.getElementById('ob-step-bar').children;
+  for (let i = 0; i < bars.length; i++) {
+    bars[i].className = 'ob-step' + (i < obStep ? ' done' : i === obStep ? ' active' : '');
+  }
+  const content = document.getElementById('ob-content');
+  content.innerHTML = '';
+  step.render(content);
+}
+
+function obNav(delta) {
+  if (delta > 0 && !obValidate()) return;
+  obStep = Math.max(0, Math.min(OB_STEPS.length - 1, obStep + delta));
+  if (obStep === OB_STEPS.length && delta > 0) { finishOnboarding(); return; }
+  renderObCurrentStep();
+}
+
+function obValidate() {
+  if (obStep === 0 && !obData.name?.trim()) { alert('Please enter your name'); return false; }
+  return true;
+}
+
+function renderObStep0(el) {
+  el.innerHTML = `
+    <div class="card" style="max-width:520px">
+      <h2 style="font-size:22px;font-weight:700;letter-spacing:-.4px;margin-bottom:6px">Let's set up your profile</h2>
+      <p class="text-t2 mb-3" style="font-size:13px">This takes about 2 minutes. Your data never leaves your browser.</p>
+      <div class="form-group">
+        <label class="form-label">Your name</label>
+        <input class="form-input" id="ob-name" placeholder="e.g. Alex" value="${obData.name||''}" oninput="obData.name=this.value;obData.initials=this.value.split(' ').map(w=>w[0]).join('').toUpperCase().slice(0,2)">
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label class="form-label">Country</label>
+          <select class="form-select" id="ob-country" onchange="obData.country=this.value">
+            <option value="CA" ${obData.country==='CA'?'selected':''}>🇨🇦 Canada</option>
+            <option value="US" ${obData.country==='US'?'selected':''}>🇺🇸 United States</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Birth year</label>
+          <input class="form-input" id="ob-byear" type="number" min="1940" max="2010" placeholder="e.g. 2003" value="${obData.birthYear||''}" oninput="obData.birthYear=parseInt(this.value)">
+          <div class="form-hint">Used to calculate TFSA room</div>
+        </div>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Approximate annual income (CAD)</label>
+        <input class="form-input" id="ob-income" type="number" min="0" placeholder="e.g. 57600" value="${obData.income||''}" oninput="obData.income=parseInt(this.value)">
+        <div class="form-hint">Used to estimate RRSP contribution limit</div>
+      </div>
+      <div class="flex-gap mt-2" style="justify-content:flex-end">
+        <button class="btn btn-accent" onclick="obNav(1)">Continue →</button>
+      </div>
+    </div>`;
+}
+
+function renderObStep1(el) {
+  const accts = obData.accounts || {};
+  el.innerHTML = `
+    <div class="card" style="max-width:520px">
+      <h2 style="font-size:18px;font-weight:700;margin-bottom:6px">Your registered accounts</h2>
+      <p class="text-t2 mb-3" style="font-size:13px">Tell us which accounts you have open and when you opened them. Leave blank if you don't have one.</p>
+      ${renderAcctBlock('TFSA','tfsa','Tax-Free Savings Account',accts.tfsa)}
+      ${renderAcctBlock('FHSA','fhsa','First Home Savings Account',accts.fhsa)}
+      ${renderAcctBlock('RRSP','rrsp','Registered Retirement Savings Plan',accts.rrsp)}
+      <div class="flex-gap mt-2" style="justify-content:space-between">
+        <button class="btn" onclick="obNav(-1)">← Back</button>
+        <button class="btn btn-accent" onclick="saveObAccts();obNav(1)">Continue →</button>
+      </div>
+    </div>`;
+}
+
+function renderAcctBlock(label, key, desc, data) {
+  return `
+    <div class="card-sm mb-2" style="border-color:var(--border)">
+      <div class="flex-between mb-2">
+        <div><span class="badge-acct badge-${key}">${label}</span> <span style="font-size:12px;color:var(--t2);margin-left:4px">${desc}</span></div>
+        <input type="checkbox" id="has-${key}" ${data?.openYear ? 'checked' : ''} onchange="document.getElementById('${key}-details').style.display=this.checked?'block':'none'" style="width:16px;height:16px;accent-color:var(--accent)">
+      </div>
+      <div id="${key}-details" style="display:${data?.openYear?'block':'none'}">
+        <div class="form-row">
+          <div class="form-group" style="margin-bottom:0">
+            <label class="form-label">Year opened</label>
+            <input class="form-input" id="${key}-year" type="number" min="2009" max="2026" placeholder="e.g. 2024" value="${data?.openYear||''}">
+          </div>
+          <div class="form-group" style="margin-bottom:0">
+            <label class="form-label">Total contributed (CAD)</label>
+            <input class="form-input" id="${key}-contrib" type="number" min="0" placeholder="e.g. 7043" value="${data?.totalContrib||''}">
+          </div>
+        </div>
+      </div>
+    </div>`;
+}
+
+function saveObAccts() {
+  obData.accounts = {};
+  ['tfsa','fhsa','rrsp'].forEach(k => {
+    if (document.getElementById('has-'+k)?.checked) {
+      obData.accounts[k] = {
+        openYear: parseInt(document.getElementById(k+'-year')?.value) || 2024,
+        totalContrib: parseFloat(document.getElementById(k+'-contrib')?.value) || 0
+      };
+    }
+  });
+}
+
+function renderObStep2(el) {
+  const a = obData.answers || {};
+  el.innerHTML = `
+    <div class="card" style="max-width:520px">
+      <h2 style="font-size:18px;font-weight:700;margin-bottom:6px">Your investment profile</h2>
+      <p class="text-t2 mb-3" style="font-size:13px">This helps us personalize insights and track how your strategy evolves.</p>
+      <div class="form-group">
+        <label class="form-label">Risk tolerance</label>
+        <div class="radio-group" id="risk-group">
+          ${['Conservative','Moderate','Aggressive'].map(r=>`<label class="radio-option ${a.risk===r?'selected':''}" onclick="selectAnswer('risk','${r}','risk-group')"><input type="radio" name="risk" value="${r}">${r}</label>`).join('')}
+        </div>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Time horizon</label>
+        <div class="radio-group" id="horizon-group">
+          ${['Under 3 years','3–10 years','10+ years'].map(h=>`<label class="radio-option ${a.horizon===h?'selected':''}" onclick="selectAnswer('horizon','${h}','horizon-group')"><input type="radio" name="horizon" value="${h}">${h}</label>`).join('')}
+        </div>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Investment style</label>
+        <div class="radio-group" id="style-group">
+          ${['Index funds','Growth stocks','Dividend','Blend','Crypto-heavy'].map(s=>`<label class="radio-option ${a.style===s?'selected':''}" onclick="selectAnswer('style','${s}','style-group')"><input type="radio" name="style" value="${s}">${s}</label>`).join('')}
+        </div>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Primary goal</label>
+        <select class="form-select" onchange="obData.answers=obData.answers||{};obData.answers.goal=this.value">
+          <option value="">Select goal...</option>
+          ${['House down payment','Retirement','General wealth building','Emergency fund','Business capital','Travel / sabbatical'].map(g=>`<option value="${g}" ${a.goal===g?'selected':''}>${g}</option>`).join('')}
+        </select>
+      </div>
+      <div class="flex-gap mt-2" style="justify-content:space-between">
+        <button class="btn" onclick="obNav(-1)">← Back</button>
+        <button class="btn btn-accent" onclick="obNav(1)">Continue →</button>
+      </div>
+    </div>`;
+}
+
+function selectAnswer(key, val, groupId) {
+  obData.answers = obData.answers || {};
+  obData.answers[key] = val;
+  document.querySelectorAll(`#${groupId} .radio-option`).forEach(el => el.classList.remove('selected'));
+  event.currentTarget.classList.add('selected');
+}
+
+function renderObStep3(el) {
+  const tfsa = obData.accounts?.tfsa;
+  const birthYear = obData.birthYear;
+  const currentYear = new Date().getFullYear();
+  let roomCalc = '';
+  if (birthYear && tfsa) {
+    const room = calcTFSARoom(birthYear, tfsa.totalContrib || 0);
+    roomCalc = `<div class="alert alert-green mt-2"><span>✓</span><div>Based on your birth year (${birthYear}), you have <strong>~$${fmt(room)}</strong> in remaining TFSA room. Verify this on <strong>CRA My Account</strong>.</div></div>`;
+  }
+  el.innerHTML = `
+    <div class="card" style="max-width:520px">
+      <h2 style="font-size:18px;font-weight:700;margin-bottom:6px">TFSA contribution details</h2>
+      <p class="text-t2 mb-3" style="font-size:13px">Let's confirm your contribution room. This updates automatically as you log contributions.</p>
+      ${tfsa ? `
+        <div class="form-group">
+          <label class="form-label">Year you opened your TFSA</label>
+          <input class="form-input" type="number" value="${tfsa.openYear}" onchange="obData.accounts.tfsa.openYear=parseInt(this.value)">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Total amount contributed to TFSA (all time)</label>
+          <input class="form-input" type="number" value="${tfsa.totalContrib||0}" onchange="obData.accounts.tfsa.totalContrib=parseFloat(this.value)">
+          <div class="form-hint">Found in Wealthsimple → Account → Contribution room, or CRA My Account</div>
+        </div>
+        ${roomCalc}
+      ` : `<div class="alert alert-amber">You haven't set up a TFSA yet. You can go back and add one, or skip this step.</div>`}
+      ${obData.accounts?.fhsa ? `
+        <div class="divider"></div>
+        <div class="form-group">
+          <label class="form-label">FHSA — total contributed</label>
+          <input class="form-input" type="number" value="${obData.accounts.fhsa.totalContrib||0}" onchange="obData.accounts.fhsa.totalContrib=parseFloat(this.value)">
+        </div>
+        <div class="form-group">
+          <label class="form-label">RRSP — total contributed (this year)</label>
+          <input class="form-input" type="number" value="${obData.accounts?.rrsp?.totalContrib||0}" onchange="obData.accounts=obData.accounts||{};obData.accounts.rrsp=obData.accounts.rrsp||{};obData.accounts.rrsp.totalContrib=parseFloat(this.value)">
+        </div>
+      ` : ''}
+      <div class="flex-gap mt-2" style="justify-content:space-between">
+        <button class="btn" onclick="obNav(-1)">← Back</button>
+        <button class="btn btn-accent" onclick="obNav(1)">Continue →</button>
+      </div>
+    </div>`;
+}
+
+function renderObStep4(el) {
+  el.innerHTML = `
+    <div class="card" style="max-width:520px">
+      <h2 style="font-size:18px;font-weight:700;margin-bottom:6px">You're all set, ${obData.name || 'there'}!</h2>
+      <p class="text-t2 mb-3" style="font-size:13px">You can add your holdings now or do it later from the Holdings tab. Import a Wealthsimple CSV or add manually.</p>
+      <div class="alert alert-blue mb-3">
+        <span>ℹ</span>
+        <div>To export your Wealthsimple CSV: open the app → tap your account → Activity → Download (top right). Import it in the <strong>Import CSV</strong> tab after creating your profile.</div>
+      </div>
+      <div class="flex-gap mt-2" style="justify-content:space-between">
+        <button class="btn" onclick="obNav(-1)">← Back</button>
+        <button class="btn btn-accent" onclick="finishOnboarding()">Create profile →</button>
+      </div>
+    </div>`;
+}
+
+function finishOnboarding() {
+  if (!obData.name?.trim()) { obStep = 0; renderObCurrentStep(); return; }
+  if (typeof obData.colorIdx !== 'number' || isNaN(obData.colorIdx)) {
+    obData.colorIdx = state.profiles.length % AVATAR_COLORS.length;
+  }
+  if (!obData.id) obData.id = 'p_' + Date.now();
+  obData.initials = obData.name.trim().split(' ').map(w => w[0]).join('').toUpperCase().slice(0, 2) || '??';
+  obData.holdings = obData.holdings || [];
+  obData.transactions = obData.transactions || [];
+  const exists = state.profiles.findIndex(p => p.id === obData.id);
+  if (exists >= 0) state.profiles[exists] = obData;
+  else state.profiles.push(obData);
+  saveState();
+  loadProfile(obData.id);
+}
+
+// ═══════════════════════════════════════════════
+// DASHBOARD
+// ═══════════════════════════════════════════════
+function loadProfile(id) {
+  state.activeProfileId = id;
+  const p = getProfile();
+  if (!p) return;
+  document.getElementById('topbar-name').textContent = p.name;
+  const [fg, bg] = AVATAR_COLORS[(p.colorIdx ?? 0) % AVATAR_COLORS.length];
+  const av = document.getElementById('topbar-avatar');
+  av.textContent = p.initials;
+  av.style.background = bg;
+  av.style.color = fg;
+  av.style.borderColor = fg;
+  document.getElementById('topbar-profile').classList.remove('hidden');
+  document.getElementById('topbar-refresh').classList.remove('hidden');
+  document.getElementById('topbar-update').classList.remove('hidden');
+  showScreen('dashboard');
+  switchDashTab('overview', document.querySelector('.tab.active'));
+  renderOverview();
+  startPriceRefresh();
+}
+
+function switchDashTab(name, el) {
+  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+  document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+  if (el) el.classList.add('active');
+  document.getElementById('tab-' + name).classList.add('active');
+  if (name === 'holdings') renderHoldings();
+  if (name === 'accounts') renderAccounts();
+  if (name === 'overview') renderOverview();
+}
+
+// ─── OVERVIEW ───
+function renderOverview() {
+  const p = getProfile();
+  if (!p) return;
+  const now = new Date();
+  const hour = now.getHours();
+  const greeting = hour < 12 ? 'Good morning' : hour < 17 ? 'Good afternoon' : 'Good evening';
+  document.getElementById('ov-greeting').textContent = `${greeting}, ${p.name}.`;
+  document.getElementById('ov-subline').textContent = `${now.toLocaleDateString('en-CA',{weekday:'long',year:'numeric',month:'long',day:'numeric'})}`;
+
+  const holdings = p.holdings || [];
+  let totalValue = 0, totalCost = 0;
+  holdings.forEach(h => {
+    const price = state.prices[h.ticker]?.price || h.avgCost;
+    totalValue += h.qty * price;
+    totalCost += h.qty * h.avgCost;
+  });
+  const gain = totalValue - totalCost;
+  const gainPct = totalCost > 0 ? (gain / totalCost) * 100 : 0;
+  const tfsa = p.accounts?.tfsa;
+  const tfsaRoom = tfsa ? calcTFSARoom(p.birthYear || 2003, tfsa.totalContrib || 0) : 0;
+
+  const metricsEl = document.getElementById('ov-metric-cards');
+  metricsEl.innerHTML = `
+    <div class="card-sm">
+      <div class="metric-label">Portfolio value</div>
+      <div class="metric-val num">$${fmt(totalValue)}</div>
+      <div class="metric-sub">${gain >= 0 ? '↑' : '↓'} <span class="${gain>=0?'text-green':'text-red'}">$${fmt(Math.abs(gain))} (${gainPct.toFixed(1)}%)</span></div>
+    </div>
+    <div class="card-sm">
+      <div class="metric-label">Total invested</div>
+      <div class="metric-val num">$${fmt(totalCost)}</div>
+      <div class="metric-sub">Cost basis</div>
+    </div>
+    <div class="card-sm">
+      <div class="metric-label">Unrealised gain</div>
+      <div class="metric-val num ${gain>=0?'text-green':'text-red'}">${gain>=0?'+':''} $${fmt(Math.abs(gain))}</div>
+      <div class="metric-sub">${gainPct >= 0 ? '+' : ''}${gainPct.toFixed(2)}% return</div>
+    </div>
+    <div class="card-sm">
+      <div class="metric-label">TFSA room remaining</div>
+      <div class="metric-val num text-accent">$${fmt(tfsaRoom)}</div>
+      <div class="metric-sub">Available to invest tax-free</div>
+    </div>`;
+
+  renderValueChart(holdings);
+  renderAllocChart(holdings);
+  renderOvHoldings(holdings);
+}
+
+function renderValueChart(holdings) {
+  const ctx = document.getElementById('chart-value');
+  if (valueChartInst) { valueChartInst.destroy(); }
+  const txs = (getProfile()?.transactions || []).sort((a,b) => new Date(a.date)-new Date(b.date));
+  let labels=[], data=[];
+  if (txs.length > 0) {
+    let running = 0;
+    const byDate = {};
+    txs.forEach(t => {
+      if (!byDate[t.date]) byDate[t.date] = 0;
+      byDate[t.date] += (t.netAmount || t.marketValue || 0);
+    });
+    Object.entries(byDate).sort().forEach(([d,v]) => {
+      running += v;
+      labels.push(d.slice(5));
+      data.push(Math.max(0,Math.round(running)));
+    });
+  } else {
+    const now = new Date();
+    for (let i=11;i>=0;i--) {
+      const d = new Date(now.getFullYear(), now.getMonth()-i, 1);
+      labels.push(d.toLocaleDateString('en',{month:'short'}));
+      data.push(0);
+    }
+  }
+  valueChartInst = new Chart(ctx, {
+    type:'line',
+    data:{labels,datasets:[{label:'Value',data,borderColor:'#00d4aa',backgroundColor:'rgba(0,212,170,0.07)',fill:true,tension:.35,pointRadius:0,borderWidth:2}]},
+    options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false},tooltip:{callbacks:{label:c=>'$'+c.raw.toLocaleString()}}},scales:{x:{ticks:{font:{size:10},color:'#4a5568'},grid:{display:false}},y:{ticks:{callback:v=>'$'+Math.round(v/1000)+'k',font:{size:10},color:'#4a5568'},grid:{color:'rgba(255,255,255,0.04)'}}}}
+  });
+}
+
+function renderAllocChart(holdings) {
+  const ctx = document.getElementById('chart-alloc');
+  if (allocChartInst) { allocChartInst.destroy(); }
+  const byAcct = {};
+  holdings.forEach(h => {
+    const price = state.prices[h.ticker]?.price || h.avgCost;
+    const val = h.qty * price;
+    byAcct[h.account] = (byAcct[h.account] || 0) + val;
+  });
+  const labels = Object.keys(byAcct);
+  const vals = labels.map(l => Math.round(byAcct[l]));
+  const total = vals.reduce((a,b)=>a+b,0);
+  const colors = {'TFSA':'#00d4aa','FHSA':'#60a5fa','RRSP':'#a78bfa','Personal':'#f59e0b'};
+  const bgs = labels.map(l => colors[l] || '#8892a4');
+  if (labels.length === 0) { document.getElementById('alloc-legend').innerHTML='<p class="text-t2" style="font-size:12px">No holdings yet.</p>'; return; }
+  allocChartInst = new Chart(ctx,{
+    type:'doughnut',
+    data:{labels,datasets:[{data:vals,backgroundColor:bgs,borderWidth:0,hoverOffset:4}]},
+    options:{responsive:true,maintainAspectRatio:false,cutout:'68%',plugins:{legend:{display:false},tooltip:{callbacks:{label:c=>`${c.label}: $${c.raw.toLocaleString()} (${((c.raw/total)*100).toFixed(1)}%)`}}}}
+  });
+  document.getElementById('alloc-legend').innerHTML = labels.map((l,i)=>`<div style="display:flex;align-items:center;justify-content:space-between;font-size:12px"><div style="display:flex;align-items:center;gap:7px"><span style="width:9px;height:9px;border-radius:2px;background:${bgs[i]};display:inline-block"></span>${l}</div><span class="num" style="color:var(--t2)">$${fmt(vals[i])} · ${((vals[i]/total)*100).toFixed(1)}%</span></div>`).join('');
+}
+
+function renderOvHoldings(holdings) {
+  const el = document.getElementById('ov-holdings-table');
+  if (!holdings.length) { el.innerHTML='<p class="text-t2" style="font-size:13px">No holdings. Add some in the Holdings tab.</p>'; return; }
+  const sorted = [...holdings].sort((a,b)=>{
+    const av = a.qty*(state.prices[a.ticker]?.price||a.avgCost);
+    const bv = b.qty*(state.prices[b.ticker]?.price||b.avgCost);
+    return bv-av;
+  }).slice(0,6);
+  el.innerHTML = `<table class="tbl"><thead><tr><th>Ticker</th><th>Account</th><th>Market value</th><th>Gain / Loss</th><th>Weight</th></tr></thead><tbody>${sorted.map(h=>{
+    const price = state.prices[h.ticker]?.price || h.avgCost;
+    const val = h.qty*price, cost = h.qty*h.avgCost, g = val-cost, gp = cost>0?(g/cost)*100:0;
+    const totalVal = holdings.reduce((s,x)=>s+x.qty*(state.prices[x.ticker]?.price||x.avgCost),0);
+    const wt = totalVal>0?(val/totalVal*100):0;
+    return `<tr><td><span class="ticker-sym">${h.ticker}</span><div style="font-size:11px;color:var(--t2)">${h.name||''}</div></td><td><span class="badge-acct badge-${h.account.toLowerCase()}">${h.account}</span></td><td class="num">$${fmt(val)}</td><td class="${g>=0?'holding-change-pos':'holding-change-neg'}">${g>=0?'+':''}$${fmt(Math.abs(g))} (${gp.toFixed(1)}%)</td><td><div class="progress-wrap" style="width:80px"><div class="progress-bar" style="width:${Math.min(100,wt).toFixed(0)}%;background:var(--accent)"></div></div><span style="font-size:11px;color:var(--t2);margin-left:6px">${wt.toFixed(1)}%</span></td></tr>`;
+  }).join('')}</tbody></table>`;
+}
+
+// ─── HOLDINGS ───
+function renderHoldings() {
+  const p = getProfile();
+  if (!p) return;
+  const holdings = p.holdings || [];
+  const tbody = document.getElementById('holdings-tbody');
+  const empty = document.getElementById('holdings-empty');
+  if (!holdings.length) { tbody.parentElement.style.display='none'; empty.classList.remove('hidden'); document.getElementById('holdings-summary-cards').innerHTML=''; return; }
+  tbody.parentElement.style.display='';
+  empty.classList.add('hidden');
+  let totalValue=0, totalCost=0;
+  const rows = holdings.map((h,i) => {
+    const price = state.prices[h.ticker]?.price || h.avgCost;
+    const priceStr = state.prices[h.ticker] ? `<span class="num">$${price.toFixed(2)}</span>${state.prices[h.ticker].change!==undefined?`<br><span style="font-size:10px;color:${state.prices[h.ticker].change>=0?'var(--green)':'var(--red)'}">${state.prices[h.ticker].change>=0?'+':''}${state.prices[h.ticker].change?.toFixed(2)}%</span>`:''}` : `<span class="num text-t2">${price.toFixed(2)}</span>`;
+    const val = h.qty*price, cost = h.qty*h.avgCost, g = val-cost, gp = cost>0?(g/cost)*100:0;
+    totalValue+=val; totalCost+=cost;
+    return `<tr>
+      <td><span class="ticker-sym">${h.ticker}</span></td>
+      <td style="font-size:12px;color:var(--t2);max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${h.name||''}</td>
+      <td><span class="badge-acct badge-${h.account.toLowerCase()}">${h.account}</span></td>
+      <td class="num">${parseFloat(h.qty).toFixed(h.qty<10?3:2)}</td>
+      <td class="num">$${parseFloat(h.avgCost).toFixed(2)}</td>
+      <td>${priceStr}</td>
+      <td class="num">$${fmt(val)}</td>
+      <td class="${g>=0?'holding-change-pos':'holding-change-neg'}">${g>=0?'+':''}$${fmt(Math.abs(g))}<br><span style="font-size:10px">${gp.toFixed(1)}%</span></td>
+      <td><button class="btn btn-ghost btn-sm" onclick="removeHolding(${i})">✕</button></td>
+    </tr>`;
+  });
+  tbody.innerHTML = rows.join('');
+  const totalGain = totalValue-totalCost;
+  const totalGainPct = totalCost>0?(totalGain/totalCost)*100:0;
+  document.getElementById('holdings-summary-cards').innerHTML = `
+    <div class="card-sm"><div class="metric-label">Total value</div><div class="metric-val num">$${fmt(totalValue)}</div></div>
+    <div class="card-sm"><div class="metric-label">Total cost</div><div class="metric-val num">$${fmt(totalCost)}</div></div>
+    <div class="card-sm"><div class="metric-label">Total gain</div><div class="metric-val num ${totalGain>=0?'text-green':'text-red'}">${totalGain>=0?'+':''}$${fmt(Math.abs(totalGain))}</div><div class="metric-sub">${totalGainPct.toFixed(2)}%</div></div>
+    <div class="card-sm"><div class="metric-label">Holdings</div><div class="metric-val num">${holdings.length}</div></div>`;
+  updateLastUpdated();
+}
+
+// ─── ACCOUNTS ROOM ───
+function renderAccounts() {
+  const p = getProfile();
+  if (!p) return;
+  const byear = p.birthYear || 2003;
+  const currentYear = new Date().getFullYear();
+  const cards = [];
+
+  if (p.accounts?.tfsa) {
+    const room = calcTFSARoom(byear, p.accounts.tfsa.totalContrib||0);
+    const total = calcTFSACumulative(byear);
+    const used = p.accounts.tfsa.totalContrib||0;
+    const pct = total>0?Math.min(100,(used/total)*100):0;
+    cards.push(`<div class="room-card"><div class="flex-between mb-1"><div class="room-title"><span class="badge-acct badge-tfsa">TFSA</span> Tax-Free Savings Account</div></div>
+      <div class="room-sub">Opened ${p.accounts.tfsa.openYear} · All growth &amp; withdrawals tax-free</div>
+      <div style="display:flex;justify-content:space-between;font-size:12px;color:var(--t2);margin-bottom:6px"><span>Contributed: <strong style="color:var(--t1)" class="num">$${fmt(used)}</strong></span><span>Room remaining: <strong style="color:var(--accent)" class="num">$${fmt(room)}</strong></span></div>
+      <div class="progress-wrap"><div class="progress-bar" style="width:${pct.toFixed(0)}%;background:var(--accent)"></div></div>
+      <div style="font-size:11px;color:var(--t3);margin-top:5px">Cumulative lifetime room: $${fmt(total)} · ${pct.toFixed(1)}% used</div>
+      <div class="mt-2" style="font-size:12px;color:var(--t2)">2026 annual limit: <strong style="color:var(--t1)">$7,000</strong> · Always verify on CRA My Account</div></div>`);
+  }
+
+  if (p.accounts?.fhsa) {
+    const contrib = p.accounts.fhsa.totalContrib||0;
+    const openYear = p.accounts.fhsa.openYear || currentYear;
+    const yearsSinceOpen = Math.max(0, currentYear - openYear);
+    const lifetimeRoom = Math.min(FHSA_LIFETIME, (yearsSinceOpen+1)*FHSA_ANNUAL);
+    const room = Math.max(0, lifetimeRoom - contrib);
+    const currentYearRoom = Math.min(FHSA_ANNUAL*2, (currentYear-openYear===0?FHSA_ANNUAL:FHSA_ANNUAL*2));
+    const pct = lifetimeRoom>0?Math.min(100,(contrib/FHSA_LIFETIME)*100):0;
+    cards.push(`<div class="room-card"><div class="flex-between mb-1"><div class="room-title"><span class="badge-acct badge-fhsa">FHSA</span> First Home Savings Account</div></div>
+      <div class="room-sub">Opened ${openYear} · Tax-deductible contributions + tax-free growth</div>
+      <div style="display:flex;justify-content:space-between;font-size:12px;color:var(--t2);margin-bottom:6px"><span>Contributed: <strong style="color:var(--t1)" class="num">$${fmt(contrib)}</strong></span><span>Room remaining: <strong style="color:var(--blue)" class="num">$${fmt(room)}</strong></span></div>
+      <div class="progress-wrap"><div class="progress-bar" style="width:${pct.toFixed(0)}%;background:var(--blue)"></div></div>
+      <div style="font-size:11px;color:var(--t3);margin-top:5px">Lifetime max: $${fmt(FHSA_LIFETIME)} · 2026 annual limit: $8,000 (carry-forward 1 yr = up to $16,000)</div></div>`);
+  }
+
+  if (p.accounts?.rrsp || p.income) {
+    const income = p.income || 57600;
+    const rrspRoom = Math.min(RRSP_MAX_2026, Math.round(income * 0.18));
+    const contrib = p.accounts?.rrsp?.totalContrib || 0;
+    const room = Math.max(0, rrspRoom - contrib);
+    const pct = rrspRoom>0?Math.min(100,(contrib/rrspRoom)*100):0;
+    cards.push(`<div class="room-card"><div class="flex-between mb-1"><div class="room-title"><span class="badge-acct badge-rrsp">RRSP</span> Registered Retirement Savings Plan</div></div>
+      <div class="room-sub">${p.accounts?.rrsp?.openYear?`Opened ${p.accounts.rrsp.openYear} · `:''}Contributions reduce taxable income</div>
+      <div style="display:flex;justify-content:space-between;font-size:12px;color:var(--t2);margin-bottom:6px"><span>This year: <strong style="color:var(--t1)" class="num">$${fmt(contrib)}</strong></span><span>2026 limit (est.): <strong style="color:var(--purple)" class="num">$${fmt(rrspRoom)}</strong></span></div>
+      <div class="progress-wrap"><div class="progress-bar" style="width:${pct.toFixed(0)}%;background:var(--purple)"></div></div>
+      <div style="font-size:11px;color:var(--t3);margin-top:5px">Based on $${fmt(income)} income × 18% = $${fmt(rrspRoom)} · Max $${fmt(RRSP_MAX_2026)}</div></div>`);
+  }
+
+  document.getElementById('room-cards').innerHTML = cards.join('');
+  renderRoomChart();
+  renderMilestones();
+}
+
+function renderRoomChart() {
+  const p = getProfile();
+  if (!p) return;
+  const ctx = document.getElementById('chart-room');
+  if (roomChartInst) roomChartInst.destroy();
+  const labels=[], used=[], available=[];
+  if (p.accounts?.tfsa) {
+    const room = calcTFSARoom(p.birthYear||2003, p.accounts.tfsa.totalContrib||0);
+    const c = p.accounts.tfsa.totalContrib||0;
+    labels.push('TFSA'); used.push(Math.round(c)); available.push(Math.round(room));
+  }
+  if (p.accounts?.fhsa) {
+    const c = p.accounts.fhsa.totalContrib||0;
+    const room = Math.max(0, FHSA_LIFETIME - c);
+    labels.push('FHSA'); used.push(Math.round(c)); available.push(Math.round(room));
+  }
+  if (p.income || p.accounts?.rrsp) {
+    const income = p.income||57600;
+    const lim = Math.min(RRSP_MAX_2026, Math.round(income*.18));
+    const c = p.accounts?.rrsp?.totalContrib||0;
+    labels.push('RRSP'); used.push(Math.round(c)); available.push(Math.round(Math.max(0,lim-c)));
+  }
+  roomChartInst = new Chart(ctx,{
+    type:'bar',
+    data:{labels,datasets:[
+      {label:'Contributed',data:used,backgroundColor:'#00d4aa',borderRadius:4,borderWidth:0},
+      {label:'Room remaining',data:available,backgroundColor:'rgba(0,212,170,0.18)',borderRadius:4,borderWidth:0}
+    ]},
+    options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false},tooltip:{callbacks:{label:c=>`${c.dataset.label}: $${c.raw.toLocaleString()}`}}},scales:{x:{stacked:true,ticks:{color:'#8892a4'},grid:{display:false}},y:{stacked:true,ticks:{callback:v=>'$'+Math.round(v/1000)+'k',color:'#8892a4'},grid:{color:'rgba(255,255,255,0.04)'}}}}
+  });
+}
+
+function renderMilestones() {
+  const p = getProfile();
+  const milestones = [];
+  const y = new Date().getFullYear();
+  const m = new Date().getMonth()+1;
+  if (p.accounts?.tfsa) {
+    milestones.push({label:'New TFSA room added', detail:'$7,000 added to your TFSA on Jan 1 each year', date:'Jan 1 every year', colour:'var(--accent)'});
+  }
+  if (p.accounts?.fhsa) {
+    milestones.push({label:'FHSA: claim your tax deduction', detail:`Contributions made in ${y} are deductible on your ${y} tax return (due Apr 30)`, date:'Apr 30 '+y, colour:'var(--blue)'});
+    milestones.push({label:'New FHSA room opens', detail:'$8,000 in new FHSA room added each January', date:'Jan 1 every year', colour:'var(--blue)'});
+  }
+  if (p.birthYear) {
+    const age = y - p.birthYear;
+    if (age < 71) milestones.push({label:'RRSP deadline', detail:'RRSP contributions for '+y+' tax year must be made by March 1 '+(y+1), date:'Mar 1 '+(y+1), colour:'var(--purple)'});
+  }
+  milestones.push({label:'TFSA: withdrawals restore next year', detail:`Any TFSA withdrawals in ${y} will add back to your room on Jan 1 ${y+1}`, date:'Jan 1 '+(y+1), colour:'var(--accent)'});
+  document.getElementById('milestones-list').innerHTML = milestones.map(m=>`<div style="display:flex;gap:12px;padding:12px 0;border-bottom:1px solid var(--border)"><div style="width:3px;border-radius:2px;background:${m.colour};flex-shrink:0"></div><div><div style="font-size:13px;font-weight:500">${m.label}</div><div style="font-size:12px;color:var(--t2);margin-top:2px">${m.detail}</div></div><div style="margin-left:auto;font-size:11px;font-family:'DM Mono',monospace;color:var(--t2);white-space:nowrap;padding-top:2px">${m.date}</div></div>`).join('');
+}
+
+// ─── HOLDINGS MODAL ───
+function openAddHolding() {
+  editHoldingIdx = null;
+  document.getElementById('h-ticker').value = '';
+  document.getElementById('h-name').value = '';
+  document.getElementById('h-qty').value = '';
+  document.getElementById('h-cost').value = '';
+  document.getElementById('h-account').value = 'TFSA';
+  document.getElementById('ticker-lookup-result').textContent = '';
+  selectCurrency('CAD');
+  document.getElementById('modal-holding').classList.remove('hidden');
+}
+
+function closeModal(id) { document.getElementById(id).classList.add('hidden'); }
+
+function selectCurrency(c) {
+  document.getElementById('radio-cad').classList.toggle('selected', c==='CAD');
+  document.getElementById('radio-usd').classList.toggle('selected', c==='USD');
+}
+
+async function lookupTicker() {
+  const ticker = document.getElementById('h-ticker').value.trim().toUpperCase();
+  if (!ticker) return;
+  const el = document.getElementById('ticker-lookup-result');
+  const knownName = TICKER_NAMES[ticker];
+  if (knownName) { document.getElementById('h-name').value = knownName; el.textContent = '✓ ' + knownName; el.style.color = 'var(--green)'; return; }
+  el.textContent = 'Looking up price...'; el.style.color = 'var(--t2)';
+  const data = await fetchYahooPrice(ticker);
+  if (data) {
+    document.getElementById('h-name').value = data.name || ticker;
+    el.textContent = `✓ Current price: $${data.price.toFixed(2)} ${data.currency||''}`;
+    el.style.color = 'var(--green)';
+  } else {
+    el.textContent = 'Could not fetch — you can still add it manually';
+    el.style.color = 'var(--amber)';
+  }
+}
+
+function saveHolding() {
+  const ticker = document.getElementById('h-ticker').value.trim().toUpperCase();
+  const name = document.getElementById('h-name').value.trim();
+  const qty = parseFloat(document.getElementById('h-qty').value);
+  const cost = parseFloat(document.getElementById('h-cost').value);
+  const account = document.getElementById('h-account').value;
+  const currency = document.querySelector('[name="currency"]:checked')?.value || 'CAD';
+  if (!ticker || isNaN(qty) || isNaN(cost)) { alert('Please fill in ticker, quantity, and average cost'); return; }
+  updateProfile(p => {
+    if (!p.holdings) p.holdings = [];
+    const h = { ticker, name: name||TICKER_NAMES[ticker]||ticker, qty, avgCost: cost, account, currency };
+    if (editHoldingIdx !== null) p.holdings[editHoldingIdx] = h;
+    else p.holdings.push(h);
+  });
+  closeModal('modal-holding');
+  renderHoldings();
+  renderOverview();
+  fetchPriceForHolding(ticker);
+}
+
+function removeHolding(idx) {
+  if (!confirm('Remove this holding?')) return;
+  updateProfile(p => { p.holdings.splice(idx, 1); });
+  renderHoldings();
+}
+
+// ─── PRICES ───
+async function fetchYahooPrice(symbol) {
+  const urls = [
+    `https://query1.finance.yahoo.com/v8/finance/chart/${symbol}?interval=1d&range=2d`,
+    `https://query2.finance.yahoo.com/v8/finance/chart/${symbol}?interval=1d&range=2d`
+  ];
+  for (const url of urls) {
+    try {
+      const r = await fetch(url, {headers:{'User-Agent':'Mozilla/5.0'}});
+      if (!r.ok) continue;
+      const d = await r.json();
+      const result = d?.chart?.result?.[0];
+      if (!result) continue;
+      const meta = result.meta;
+      const price = meta.regularMarketPrice || meta.previousClose;
+      const prevClose = meta.chartPreviousClose || meta.previousClose;
+      const change = prevClose ? ((price - prevClose) / prevClose) * 100 : 0;
+      return { price, change, name: meta.longName || meta.shortName || symbol, currency: meta.currency };
+    } catch(e) {}
+  }
+  try {
+    const proxy = `https://api.allorigins.win/get?url=${encodeURIComponent(`https://query1.finance.yahoo.com/v8/finance/chart/${symbol}?interval=1d&range=2d`)}`;
+    const r = await fetch(proxy);
+    const d = await r.json();
+    const parsed = JSON.parse(d.contents);
+    const result = parsed?.chart?.result?.[0];
+    if (result) {
+      const meta = result.meta;
+      const price = meta.regularMarketPrice || meta.previousClose;
+      const prevClose = meta.chartPreviousClose || meta.previousClose;
+      const change = prevClose ? ((price-prevClose)/prevClose)*100 : 0;
+      return { price, change, name: meta.longName||meta.shortName||symbol, currency: meta.currency };
+    }
+  } catch(e) {}
+  return null;
+}
+
+async function fetchPriceForHolding(ticker) {
+  const data = await fetchYahooPrice(ticker);
+  if (data) { state.prices[ticker] = data; }
+}
+
+async function refreshAllPrices() {
+  const p = getProfile();
+  if (!p) return;
+  const holdings = p.holdings || [];
+  const tickers = [...new Set(holdings.map(h => h.ticker))];
+  if (!tickers.length) return;
+  document.getElementById('refresh-icon').innerHTML = '<span class="spin" style="width:13px;height:13px;vertical-align:middle"></span>';
+  document.getElementById('topbar-update').textContent = 'Updating...';
+  await Promise.all(tickers.map(t => fetchPriceForHolding(t)));
+  state.lastPriceUpdate = new Date();
+  document.getElementById('refresh-icon').textContent = '↻';
+  updateLastUpdated();
+  const activeTab = document.querySelector('.tab.active')?.getAttribute('onclick')?.match(/'(\w+)'/)?.[1];
+  if (activeTab === 'holdings') renderHoldings();
+  if (activeTab === 'overview' || !activeTab) renderOverview();
+}
+
+function updateLastUpdated() {
+  const el = document.getElementById('topbar-update');
+  const el2 = document.getElementById('price-last-updated');
+  if (state.lastPriceUpdate) {
+    const str = 'Updated ' + state.lastPriceUpdate.toLocaleTimeString('en',{hour:'2-digit',minute:'2-digit'});
+    el.textContent = str; el2.textContent = str;
+  }
+}
+
+function startPriceRefresh() {
+  stopPriceRefresh();
+  refreshAllPrices();
+  priceRefreshInterval = setInterval(refreshAllPrices, 5 * 60 * 1000);
+}
+
+function stopPriceRefresh() {
+  if (priceRefreshInterval) { clearInterval(priceRefreshInterval); priceRefreshInterval = null; }
+}
+
+// ─── CSV IMPORT ───
+function handleCSVFile(event) {
+  const file = event.target.files[0];
+  if (!file) return;
+  setupDropZone();
+  Papa.parse(file, {
+    header: true, skipEmptyLines: true, trimHeaders: true,
+    complete: function(results) {
+      processCSV(results.data, file.name);
+      document.getElementById('csv-file').value = '';
+    },
+    error: function(err) { showImportResult('error', 'Could not parse file: ' + err.message); }
+  });
+}
+
+function processCSV(rows, fname) {
+  if (!rows.length) { showImportResult('error', 'CSV appears empty.'); return; }
+  const headers = Object.keys(rows[0]).map(h => h.trim().toLowerCase());
+  const col = (names) => names.find(n => headers.includes(n)) || headers.find(h => names.some(n => h.includes(n)));
+  const dateCol = col(['date','transaction date','trade date']);
+  const typeCol = col(['activity','activity type','type','transaction type']);
+  const symCol = col(['symbol','ticker','security']);
+  const descCol = col(['description','name','security name']);
+  const qtyCol = col(['quantity','qty','shares','units']);
+  const priceCol = col(['price','unit price','market price']);
+  const valCol = col(['market value','value','amount','net amount','total']);
+
+  const txs = [];
+  const holdingMap = {};
+  let imported = 0, skipped = 0;
+
+  rows.forEach(row => {
+    const get = (c) => c ? (row[Object.keys(row).find(k=>k.trim().toLowerCase()===c)] || row[Object.keys(row).find(k=>k.trim().toLowerCase().includes(c?.split(' ')[0]))]) : '';
+    const date = get(dateCol)?.trim() || '';
+    const type = get(typeCol)?.trim().toLowerCase() || '';
+    const sym = get(symCol)?.trim().toUpperCase() || '';
+    const desc = get(descCol)?.trim() || '';
+    const qty = parseFloat(get(qtyCol)) || 0;
+    const price = parseFloat(get(priceCol)) || 0;
+    const val = Math.abs(parseFloat(get(valCol))) || 0;
+
+    if (!date && !type) { skipped++; return; }
+
+    const tx = { date: normalizeDate(date), type, symbol: sym, description: desc, qty, price, marketValue: val, netAmount: val };
+    txs.push(tx);
+    imported++;
+
+    if ((type.includes('buy') || type.includes('purchase')) && sym && qty > 0) {
+      if (!holdingMap[sym]) holdingMap[sym] = { qty: 0, totalCost: 0, name: desc };
+      holdingMap[sym].qty += qty;
+      holdingMap[sym].totalCost += qty * (price || val / qty);
+    } else if ((type.includes('sell') || type.includes('sale')) && sym && qty > 0) {
+      if (holdingMap[sym]) holdingMap[sym].qty = Math.max(0, holdingMap[sym].qty - qty);
+    }
+  });
+
+  updateProfile(p => {
+    p.transactions = [...(p.transactions || []), ...txs].sort((a,b) => new Date(a.date)-new Date(b.date));
+    Object.entries(holdingMap).forEach(([sym, data]) => {
+      if (data.qty <= 0.001) return;
+      const avgCost = data.qty > 0 ? data.totalCost / data.qty : 0;
+      const existing = p.holdings?.find(h => h.ticker === sym);
+      if (!existing) {
+        if (!p.holdings) p.holdings = [];
+        p.holdings.push({ ticker: sym, name: data.name||TICKER_NAMES[sym]||sym, qty: Math.round(data.qty*1000)/1000, avgCost: Math.round(avgCost*100)/100, account: 'TFSA', currency: 'CAD' });
+      }
+    });
+  });
+
+  showImportResult('success', `Imported ${imported} transactions from ${fname}. ${Object.keys(holdingMap).length} holdings updated.`);
+  renderTxLog();
+  renderHoldings();
+  renderOverview();
+  refreshAllPrices();
+}
+
+function normalizeDate(str) {
+  if (!str) return new Date().toISOString().slice(0,10);
+  const cleaned = str.replace(/\//g,'-');
+  const d = new Date(cleaned);
+  return isNaN(d) ? str : d.toISOString().slice(0,10);
+}
+
+function showImportResult(type, msg) {
+  const el = document.getElementById('import-result');
+  el.innerHTML = `<div class="alert ${type==='success'?'alert-green':'alert-amber'}"><span>${type==='success'?'✓':'⚠'}</span><div>${msg}</div></div>`;
+}
+
+function renderTxLog() {
+  const p = getProfile();
+  const txs = (p?.transactions||[]).slice(-20).reverse();
+  const el = document.getElementById('tx-log');
+  if (!txs.length) { el.innerHTML='<p class="text-t2" style="font-size:12px">No transactions yet.</p>'; return; }
+  el.innerHTML = txs.map(t=>`<div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid var(--border);font-size:12px"><div><span class="num" style="color:var(--t2)">${t.date}</span> <span style="font-weight:500;margin-left:8px">${t.type}</span> <span style="color:var(--t2);margin-left:4px">${t.symbol||t.description||''}</span></div><span class="num">${t.marketValue>0?'$'+fmt(t.marketValue):''}</span></div>`).join('');
+}
+
+function setupDropZone() {
+  const zone = document.getElementById('drop-zone');
+  zone.addEventListener('dragover', e => { e.preventDefault(); zone.classList.add('drag-over'); });
+  zone.addEventListener('dragleave', () => zone.classList.remove('drag-over'));
+  zone.addEventListener('drop', e => {
+    e.preventDefault(); zone.classList.remove('drag-over');
+    const file = e.dataTransfer.files[0];
+    if (file) { Papa.parse(file, { header:true, skipEmptyLines:true, complete: r => processCSV(r.data, file.name) }); }
+  });
+}
+
+// ─── EXPORT / IMPORT ───
+function exportAllData() {
+  const blob = new Blob([JSON.stringify({ profiles: state.profiles }, null, 2)], {type:'application/json'});
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'wealthtrack-backup.json';
+  a.click();
+}
+
+function importAllData(event) {
+  const file = event.target.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = e => {
+    try {
+      const d = JSON.parse(e.target.result);
+      if (d.profiles) { state.profiles = d.profiles; saveState(); renderLanding(); alert('Data imported successfully!'); }
+    } catch(e) { alert('Could not parse backup file.'); }
+  };
+  reader.readAsText(file);
+}
+
+// ─── HELPERS ───
+function fmt(n) { return Math.round(n).toLocaleString('en-CA'); }
+
+function calcTFSACumulative(birthYear) {
+  const currentYear = new Date().getFullYear();
+  const startYear = Math.max(2009, birthYear + 18);
+  let total = 0;
+  for (let y = startYear; y <= currentYear; y++) total += (TFSA_LIMITS[y] || 7000);
+  return total;
+}
+
+function calcTFSARoom(birthYear, contributed) {
+  return Math.max(0, calcTFSACumulative(birthYear) - contributed);
+}
+
+// ─── BOOT ───
+loadState();
+renderLanding();
+setupDropZone();
+document.addEventListener('visibilitychange', () => {
+  if (!document.hidden && state.activeProfileId) refreshAllPrices();
+});
+</script>
+</body>
+</html>
